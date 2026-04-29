@@ -16,6 +16,8 @@ import { ScreenContainer } from '@/components/screen-container';
 import { useColors } from '@/hooks/use-colors';
 import { loadSettings, saveSettings, Settings } from '@/lib/settings-store';
 import { speakWithElevenLabs, speakWithSystemTTS } from '@/lib/voice-service';
+import { deleteAllData, exportUserData, getConsent } from '@/lib/lgpd';
+import * as Sharing from 'expo-sharing';
 
 type Mode = 'locked' | 'pin' | 'unlocked';
 
@@ -273,6 +275,71 @@ export default function SettingsScreen() {
           </Pressable>
         </View>
 
+        {/* Seção LGPD */}
+        <View style={[styles.section, { backgroundColor: colors.surface, borderColor: colors.border }]}>
+          <Text style={[styles.sectionTitle, { color: colors.primary }]}>🔒 Privacidade e LGPD</Text>
+          <Pressable
+            onPress={async () => {
+              const consent = await getConsent();
+              Alert.alert(
+                'Consentimento',
+                consent?.accepted
+                  ? `Consentimento registrado em ${new Date(consent.timestamp).toLocaleDateString('pt-BR')} por ${consent.responsibleName ?? 'não informado'}.`
+                  : 'Nenhum consentimento registrado.',
+              );
+            }}
+            style={({ pressed }) => [styles.lgpdBtn, { borderColor: colors.border }, pressed && { opacity: 0.7 }]}
+          >
+            <Text style={[styles.lgpdBtnText, { color: colors.foreground }]}>📋 Ver registro de consentimento</Text>
+          </Pressable>
+          <Pressable
+            onPress={async () => {
+              const result = await exportUserData();
+              if ('error' in result) {
+                Alert.alert('Erro', result.error);
+                return;
+              }
+              const canShare = await Sharing.isAvailableAsync();
+              if (canShare) {
+                await Sharing.shareAsync(result.fileUri, { mimeType: 'application/json', dialogTitle: 'Exportar dados EloCare' });
+              } else {
+                Alert.alert('Exportado', `Arquivo salvo em:\n${result.fileUri}`);
+              }
+            }}
+            style={({ pressed }) => [styles.lgpdBtn, { borderColor: colors.border }, pressed && { opacity: 0.7 }]}
+          >
+            <Text style={[styles.lgpdBtnText, { color: colors.foreground }]}>📤 Exportar meus dados</Text>
+          </Pressable>
+          <Pressable
+            onPress={() => {
+              Alert.alert(
+                'Apagar todos os dados',
+                'Esta ação é irreversível. Todos os perfis, histórico de comunicação e configurações serão apagados permanentemente.',
+                [
+                  { text: 'Cancelar', style: 'cancel' },
+                  {
+                    text: 'Apagar tudo',
+                    style: 'destructive',
+                    onPress: async () => {
+                      const result = await deleteAllData();
+                      if (result.success) {
+                        Alert.alert('Dados apagados', 'Todos os dados foram removidos com sucesso.');
+                      } else {
+                        Alert.alert('Erro', result.error ?? 'Falha ao apagar dados.');
+                      }
+                    },
+                  },
+                ],
+              );
+            }}
+            style={({ pressed }) => [styles.lgpdBtn, { borderColor: '#EF4444' }, pressed && { opacity: 0.7 }]}
+          >
+            <Text style={[styles.lgpdBtnText, { color: '#EF4444' }]}>🗑️ Apagar todos os dados</Text>
+          </Pressable>
+          <Text style={[styles.lgpdInfo, { color: colors.muted }]}>
+            Dados de telemetria são automaticamente apagados após 90 dias. Conforme a LGPD (Lei 13.709/2018).
+          </Text>
+        </View>
         {/* Save Button */}
         <Pressable
           onPress={handleSave}
@@ -472,5 +539,21 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     fontSize: 12,
     marginTop: 8,
+  },
+  lgpdBtn: {
+    borderWidth: 1,
+    borderRadius: 10,
+    paddingVertical: 12,
+    paddingHorizontal: 14,
+    marginBottom: 10,
+  },
+  lgpdBtnText: {
+    fontSize: 14,
+    fontWeight: '500',
+  },
+  lgpdInfo: {
+    fontSize: 11,
+    lineHeight: 16,
+    marginTop: 4,
   },
 });

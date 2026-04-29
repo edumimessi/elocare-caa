@@ -26,6 +26,17 @@ const MAPPING = {
   "info.circle.fill": "info",
   "star.fill": "star",
   "heart.fill": "favorite",
+  "chart.bar.fill": "bar-chart",
+  "person.2.fill": "group",
+  "plus": "add",
+  "plus.circle.fill": "add-circle",
+  "photo": "photo",
+  "camera.fill": "camera-alt",
+  "square.and.arrow.up": "share",
+  "calendar": "calendar-today",
+  "clock.fill": "access-time",
+  "waveform": "graphic-eq",
+  "wifi.slash": "wifi-off",
 } as IconMapping;
 
 export function IconSymbol({

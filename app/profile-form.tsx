@@ -204,7 +204,7 @@ export default function ProfileFormScreen() {
       }
 
       router.back();
-    } catch (err) {
+    } catch {
       Alert.alert('Erro', 'Não foi possível salvar o perfil. Tente novamente.');
     } finally {
       setSaving(false);

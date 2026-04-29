@@ -18,7 +18,6 @@ import { ScreenContainer } from '@/components/screen-container';
 import { useColors } from '@/hooks/use-colors';
 import {
   CATEGORIES,
-  CARDS,
   getCardsByCategory,
   CAACard,
   CAACategory,

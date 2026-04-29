@@ -87,6 +87,19 @@ export default function ProfileFormScreen() {
     []
   );
 
+  // Aplica máscara DD/MM/AAAA automaticamente
+  const handleBirthDateChange = useCallback((raw: string) => {
+    // Remove tudo que não é dígito
+    const digits = raw.replace(/\D/g, '').slice(0, 8);
+    let masked = digits;
+    if (digits.length > 4) {
+      masked = `${digits.slice(0, 2)}/${digits.slice(2, 4)}/${digits.slice(4)}`;
+    } else if (digits.length > 2) {
+      masked = `${digits.slice(0, 2)}/${digits.slice(2)}`;
+    }
+    update('birthDate', masked);
+  }, [update]);
+
   // ── FOTO ────────────────────────────────────
 
   const handlePickPhoto = useCallback(async () => {
@@ -373,7 +386,7 @@ export default function ProfileFormScreen() {
               color: colors.foreground,
             }]}
             value={form.birthDate}
-            onChangeText={(v) => update('birthDate', v)}
+            onChangeText={handleBirthDateChange}
             placeholder="DD/MM/AAAA"
             placeholderTextColor={colors.muted}
             keyboardType="numeric"
@@ -397,14 +410,16 @@ export default function ProfileFormScreen() {
           {isEditing && (
             <Pressable
               onPress={handleDelete}
+              disabled={saving}
               style={({ pressed }) => [
                 styles.deleteBtn,
                 { borderColor: colors.error },
                 pressed && { opacity: 0.7 },
+                saving && { opacity: 0.4 },
               ]}
             >
               <Text style={[styles.deleteBtnText, { color: colors.error }]}>
-                Excluir perfil
+                {saving ? 'Aguarde...' : 'Excluir perfil'}
               </Text>
             </Pressable>
           )}

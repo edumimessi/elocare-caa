@@ -3,6 +3,7 @@
 // Tela de relatório clínico — área do terapeuta
 // ─────────────────────────────────────────────
 import React, { useState, useCallback } from 'react';
+import type { ViewStyle } from 'react-native';
 import {
   View,
   Text,
@@ -33,15 +34,22 @@ export default function ReportScreen() {
   const [period, setPeriod] = useState(30);
   const [report, setReport] = useState<TelemetryReport | null>(null);
   const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   const loadReport = useCallback(async () => {
     if (!selectedProfileId) return;
     setLoading(true);
-    const profile = profiles.find((p) => p.id === selectedProfileId);
-    if (!profile) return;
-    const r = await generateReport(selectedProfileId, profile.name, period);
-    setReport(r);
-    setLoading(false);
+    setError(null);
+    try {
+      const profile = profiles.find((p) => p.id === selectedProfileId);
+      if (!profile) return;
+      const r = await generateReport(selectedProfileId, profile.name, period);
+      setReport(r);
+    } catch {
+      setError('Não foi possível gerar o relatório. Tente novamente.');
+    } finally {
+      setLoading(false);
+    }
   }, [selectedProfileId, period, profiles]);
 
   const handleShare = useCallback(async () => {
@@ -142,6 +150,14 @@ export default function ReportScreen() {
           />
         )}
 
+        {error && !loading && (
+          <View style={[styles.errorBox, { backgroundColor: '#FEE2E2', borderColor: '#EF4444' }]}>
+            <Text style={{ color: '#DC2626', fontSize: 14, fontWeight: '600' }}>
+              {error}
+            </Text>
+          </View>
+        )}
+
         {/* Resultados */}
         {report && !loading && (
           <>
@@ -189,12 +205,12 @@ export default function ReportScreen() {
                       <View
                         style={[
                           styles.rankFill,
+                          { backgroundColor: colors.primary } as ViewStyle,
                           {
-                            backgroundColor: colors.primary,
                             width: `${Math.min(
                               (card.count / (report.topCards[0]?.count || 1)) * 100,
                               100
-                            )}%` as any,
+                            )}%` as ViewStyle['width'],
                           },
                         ]}
                       />
@@ -401,5 +417,11 @@ const styles = StyleSheet.create({
   shareBtnText: {
     fontSize: 15,
     fontWeight: '700',
+  },
+  errorBox: {
+    borderWidth: 1,
+    borderRadius: 10,
+    padding: 14,
+    marginTop: 16,
   },
 });

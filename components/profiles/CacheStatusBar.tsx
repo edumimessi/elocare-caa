@@ -3,7 +3,7 @@
 // Barra de status da pré-geração de áudio offline
 // ─────────────────────────────────────────────
 import React from 'react';
-import { View, Text, Pressable, StyleSheet } from 'react-native';
+import { View, Text, Pressable, StyleSheet, ViewStyle } from 'react-native';
 import { useColors } from '@/hooks/use-colors';
 import { PreGenerationStatus } from '@/types';
 
@@ -49,8 +49,7 @@ export function CacheStatusBar({
             { backgroundColor: colors.border }]}>
             <View style={[styles.progressFill, {
               backgroundColor: colors.primary,
-              width: `${pct}%` as any,
-            }]} />
+            } as ViewStyle, { width: `${pct}%` as ViewStyle['width'] }]} />
           </View>
           <Text style={[styles.progressLabel, { color: colors.muted }]}>
             Preparando voz... {pct}%

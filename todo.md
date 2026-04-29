@@ -34,3 +34,7 @@
 - [x] Implementar LGPD: exportação de dados (portabilidade)
 - [x] Implementar LGPD: política de retenção (máximo 90 dias)
 - [ ] Documentar roadmap de migração para backend intermediário (API key ElevenLabs)
+- [x] Correção v3: remover `as any` do CacheStatusBar.tsx (width dinâmico)
+- [x] Correção v3: remover `as any` do report.tsx + adicionar try/catch e estado de erro
+- [x] Correção v3: validação de data DD/MM/AAAA no profile-form.tsx
+- [x] Correção v3: desabilitar botão Excluir durante `saving` no profile-form.tsx

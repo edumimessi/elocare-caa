@@ -1,113 +1,114 @@
-// Load environment variables with proper priority (system > .env)
-import "./scripts/load-env.js";
+// app.config.ts — EloCare CAA
+// Configuração Expo para produção — Clínica Mimessi
 import type { ExpoConfig } from "expo/config";
 
-// Bundle ID format: space.manus.<project_name_dots>.<timestamp>
-// e.g., "my-app" created at 2024-01-15 10:30:45 -> "space.manus.my.app.t20240115103045"
-// Bundle ID can only contain letters, numbers, and dots
-// Android requires each dot-separated segment to start with a letter
-const rawBundleId = "space.manus.caa_app.t20260429115115";
-const bundleId =
-  rawBundleId
-    .replace(/[-_]/g, ".") // Replace hyphens/underscores with dots
-    .replace(/[^a-zA-Z0-9.]/g, "") // Remove invalid chars
-    .replace(/\.+/g, ".") // Collapse consecutive dots
-    .replace(/^\.+|\.+$/g, "") // Trim leading/trailing dots
-    .toLowerCase()
-    .split(".")
-    .map((segment) => {
-      // Android requires each segment to start with a letter
-      // Prefix with 'x' if segment starts with a digit
-      return /^[a-zA-Z]/.test(segment) ? segment : "x" + segment;
-    })
-    .join(".") || "space.manus.app";
-// Extract timestamp from bundle ID and prefix with "manus" for deep link scheme
-// e.g., "space.manus.my.app.t20240115103045" -> "manus20240115103045"
-const timestamp = bundleId.split(".").pop()?.replace(/^t/, "") ?? "";
-const schemeFromBundleId = `manus${timestamp}`;
-
-const env = {
-  // App branding - update these values directly (do not use env vars)
-  appName: "EloCare CAA",
-  appSlug: "caa_app",
-  // S3 URL of the app logo - set this to the URL returned by generate_image when creating custom logo
-  // Leave empty to use the default icon from assets/images/icon.png
-  logoUrl: "https://d2xsxph8kpxj0f.cloudfront.net/310419663029864386/mA2PQSfTdwUamYf7euFjge/icon-XZrkDbtjLRbyTVhjhtGjm6.png",
-  scheme: schemeFromBundleId,
-  iosBundleId: bundleId,
-  androidPackage: bundleId,
+// ── IDENTIDADE DO APP ─────────────────────────
+// Altere estes valores antes de publicar nas lojas
+const APP_CONFIG = {
+  name:     "EloCare CAA",
+  slug:     "elocare-caa",
+  version:  "1.0.0",
+  // Bundle ID permanente — NÃO pode ser alterado após publicação nas lojas
+  // Formato: com.<empresa>.<produto>
+  bundleId: "com.clinicamimessi.elocare",
+  scheme:   "elocarecaa",
 };
 
 const config: ExpoConfig = {
-  name: env.appName,
-  slug: env.appSlug,
-  version: "1.0.0",
+  name:        APP_CONFIG.name,
+  slug:        APP_CONFIG.slug,
+  version:     APP_CONFIG.version,
   orientation: "portrait",
-  icon: "./assets/images/icon.png",
-  scheme: env.scheme,
+  icon:        "./assets/images/icon.png",
+  scheme:      APP_CONFIG.scheme,
   userInterfaceStyle: "automatic",
-  newArchEnabled: true,
+  newArchEnabled:     true,
+
+  // ── iOS ───────────────────────────────────────
   ios: {
-    supportsTablet: true,
-    bundleIdentifier: env.iosBundleId,
-    "infoPlist": {
-        "ITSAppUsesNonExemptEncryption": false
-      }
+    supportsTablet:   true,
+    bundleIdentifier: APP_CONFIG.bundleId,
+    infoPlist: {
+      // Não usa criptografia proprietária
+      ITSAppUsesNonExemptEncryption: false,
+      // Permissão de câmera — obrigatório para profile-form.tsx
+      NSCameraUsageDescription:
+        "Usamos a câmera para adicionar a foto do paciente ao perfil.",
+      // Permissão de galeria — obrigatório para profile-form.tsx
+      NSPhotoLibraryUsageDescription:
+        "Usamos a galeria para escolher a foto do paciente.",
+      // Permissão de galeria (escrita) — iOS 14+
+      NSPhotoLibraryAddUsageDescription:
+        "Permitimos salvar imagens para os cartões personalizados do paciente.",
+    },
   },
+
+  // ── Android ──────────────────────────────────
   android: {
     adaptiveIcon: {
-      backgroundColor: "#E6F4FE",
-      foregroundImage: "./assets/images/android-icon-foreground.png",
-      backgroundImage: "./assets/images/android-icon-background.png",
-      monochromeImage: "./assets/images/android-icon-monochrome.png",
+      backgroundColor:  "#1A56DB",
+      foregroundImage:  "./assets/images/android-icon-foreground.png",
+      backgroundImage:  "./assets/images/android-icon-background.png",
+      monochromeImage:  "./assets/images/android-icon-monochrome.png",
     },
-    edgeToEdgeEnabled: true,
-    predictiveBackGestureEnabled: false,
-    package: env.androidPackage,
-    permissions: ["POST_NOTIFICATIONS"],
+    edgeToEdgeEnabled:             true,
+    predictiveBackGestureEnabled:  false,
+    package: APP_CONFIG.bundleId,
+    permissions: [
+      "POST_NOTIFICATIONS",
+      // Câmera — profile-form.tsx
+      "CAMERA",
+      // Galeria — profile-form.tsx (Android < 13)
+      "READ_EXTERNAL_STORAGE",
+      "WRITE_EXTERNAL_STORAGE",
+      // Galeria — Android 13+
+      "READ_MEDIA_IMAGES",
+      // Manter tela ativa durante sessão terapêutica
+      "WAKE_LOCK",
+    ],
     intentFilters: [
       {
-        action: "VIEW",
+        action:   "VIEW",
         autoVerify: true,
-        data: [
-          {
-            scheme: env.scheme,
-            host: "*",
-          },
-        ],
+        data: [{ scheme: APP_CONFIG.scheme, host: "*" }],
         category: ["BROWSABLE", "DEFAULT"],
       },
     ],
   },
+
+  // ── Web ───────────────────────────────────────
   web: {
     bundler: "metro",
-    output: "static",
+    output:  "static",
     favicon: "./assets/images/favicon.png",
   },
+
+  // ── Plugins ───────────────────────────────────
   plugins: [
     "expo-router",
     [
       "expo-audio",
       {
-        microphonePermission: "Allow $(PRODUCT_NAME) to access your microphone.",
+        microphonePermission:
+          "Permitir que o $(PRODUCT_NAME) acesse o microfone.",
       },
     ],
     [
       "expo-video",
       {
         supportsBackgroundPlayback: true,
-        supportsPictureInPicture: true,
+        supportsPictureInPicture:   true,
       },
     ],
     [
       "expo-splash-screen",
       {
-        image: "./assets/images/splash-icon.png",
-        imageWidth: 200,
-        resizeMode: "contain",
-        backgroundColor: "#ffffff",
+        image:           "./assets/images/splash-icon.png",
+        imageWidth:      200,
+        resizeMode:      "contain",
+        backgroundColor: "#1A56DB",
         dark: {
-          backgroundColor: "#000000",
+          backgroundColor: "#0F172A",
         },
       },
     ],
@@ -115,15 +116,16 @@ const config: ExpoConfig = {
       "expo-build-properties",
       {
         android: {
-          buildArchs: ["armeabi-v7a", "arm64-v8a"],
+          buildArchs:    ["armeabi-v7a", "arm64-v8a"],
           minSdkVersion: 24,
         },
       },
     ],
   ],
+
   experiments: {
-    typedRoutes: true,
-    reactCompiler: true,
+    typedRoutes:    true,
+    reactCompiler:  true,
   },
 };
 

@@ -21,7 +21,9 @@ import { ScreenContainer } from '@/components/screen-container';
 import { useColors } from '@/hooks/use-colors';
 import {
   CATEGORIES,
+  CARDS,
   getCardsByCategory,
+  getPhotoUri,
   CAACard,
   CAACategory,
 } from '@/lib/caa-data';
@@ -36,8 +38,9 @@ import { CacheStatusBar }  from '@/components/profiles/CacheStatusBar';
 
 type Screen = 'categories' | 'board';
 
-// Cartão estendido para suportar imagens reais de cartões customizados
 type DisplayCard = CAACard & { imageUri?: string };
+
+const QUICK_CARD_IDS = ['water', 'bathroom', 'pain', 'help', 'yes', 'no', 'want', 'food_need'];
 
 export default function HomeScreen() {
   const colors  = useColors();
@@ -49,6 +52,7 @@ export default function HomeScreen() {
   const [sentence, setSentence]         = useState<DisplayCard[]>([]);
   const [pressedId, setPressedId]       = useState<string | null>(null);
   const [settings, setSettings]         = useState<Settings | null>(null);
+  const [failedImages, setFailedImages] = useState<Set<string>>(new Set());
 
   // ── Módulos
   const { profiles, activeProfile, switchProfile } = useProfiles();
@@ -89,12 +93,17 @@ export default function HomeScreen() {
   const hiddenIds    = new Set(activeProfile?.hiddenCardIds ?? []);
   const customCards  = activeProfile?.customCards ?? [];
 
+  const quickCards = useMemo(
+    () => QUICK_CARD_IDS
+      .map((id) => CARDS.find((card) => card.id === id))
+      .filter((card): card is CAACard => !!card && !hiddenIds.has(card.id)),
+    [hiddenIds]
+  );
+
   const visibleCards: DisplayCard[] = selectedCategory
     ? [
-        // Cartões padrão não ocultos
         ...getCardsByCategory(selectedCategory.id)
           .filter((c) => !hiddenIds.has(c.id)),
-        // Cartões personalizados desta categoria
         ...customCards
           .filter((c) => c.categoryId === selectedCategory.id)
           .map((c): DisplayCard => ({
@@ -108,7 +117,41 @@ export default function HomeScreen() {
       ]
     : [];
 
-  // ── HANDLERS ──────────────────────────────
+  // ── IMAGENS ────────────────────────────────
+
+  const markImageFailed = useCallback((key: string) => {
+    setFailedImages((prev) => {
+      const next = new Set(prev);
+      next.add(key);
+      return next;
+    });
+  }, []);
+
+  const getCardImageUri = useCallback((item: DisplayCard | CAACard) => {
+    if ('imageUri' in item && item.imageUri) return item.imageUri;
+    if (item.imageQuery) return getPhotoUri(item.imageQuery, item.id);
+    return null;
+  }, []);
+
+  const getCategoryImageUri = useCallback((item: CAACategory) => {
+    if (!item.imageQuery) return null;
+    return getPhotoUri(item.imageQuery, `category-${item.id}`);
+  }, []);
+
+  // ── HANDLERS ───────────────────────────────
+
+  const speakCard = useCallback(async (card: DisplayCard | CAACard) => {
+    setPressedId(card.id);
+    setTimeout(() => setPressedId(null), 300);
+
+    await audio.play(
+      card.id,
+      card.label,
+      settings?.useElevenLabs ?? false
+    );
+
+    telemetry.logClick(card.id, card.label, card.categoryId);
+  }, [audio, telemetry, settings?.useElevenLabs]);
 
   const handleCategoryPress = useCallback((cat: CAACategory) => {
     if (Platform.OS !== 'web')
@@ -122,20 +165,16 @@ export default function HomeScreen() {
     if (Platform.OS !== 'web')
       Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
 
-    setPressedId(card.id);
-    setTimeout(() => setPressedId(null), 300);
     setSentence((prev) => [...prev, card]);
+    await speakCard(card);
+  }, [speakCard]);
 
-    // Reprodução com hierarquia: cache → API → TTS nativo
-    await audio.play(
-      card.id,
-      card.label,
-      settings?.useElevenLabs ?? false
-    );
+  const handleQuickPress = useCallback(async (card: CAACard) => {
+    if (Platform.OS !== 'web')
+      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
 
-    // Telemetria
-    telemetry.logClick(card.id, card.label, card.categoryId);
-  }, [audio, telemetry, settings?.useElevenLabs]);
+    await speakCard(card);
+  }, [speakCard]);
 
   const handleSpeakSentence = useCallback(async () => {
     if (sentence.length === 0) return;
@@ -171,24 +210,31 @@ export default function HomeScreen() {
     router.push('../profile-form' as any);
   }, [router]);
 
-  const renderCardVisual = (item: DisplayCard, isPressed = false) => {
-    if (item.imageUri) {
-      return (
-        <Image
-          source={{ uri: item.imageUri }}
-          style={styles.caaImage}
-          resizeMode="cover"
-          accessibilityIgnoresInvertColors
-        />
-      );
-    }
+  const renderCardVisual = (item: DisplayCard | CAACard, isPressed = false, compact = false) => {
+    const imageUri = getCardImageUri(item);
+    const imageKey = `card-${item.id}`;
 
     return (
-      <View style={[
-        styles.emojiBubble,
-        { backgroundColor: isPressed ? 'rgba(255,255,255,0.22)' : item.color + '18' },
-      ]}>
-        <Text style={styles.caaEmoji}>{item.emoji}</Text>
+      <View style={compact ? styles.quickPhotoWrap : styles.caaPhotoWrap}>
+        {imageUri && !failedImages.has(imageKey) ? (
+          <Image
+            source={{ uri: imageUri }}
+            style={compact ? styles.quickPhoto : styles.caaImage}
+            resizeMode="cover"
+            accessibilityIgnoresInvertColors
+            onError={() => markImageFailed(imageKey)}
+          />
+        ) : (
+          <View style={[
+            compact ? styles.quickEmojiBubble : styles.emojiBubble,
+            { backgroundColor: isPressed ? 'rgba(255,255,255,0.22)' : item.color + '18' },
+          ]}>
+            <Text style={compact ? styles.quickEmoji : styles.caaEmoji}>{item.emoji}</Text>
+          </View>
+        )}
+        <View style={[styles.photoBadge, { backgroundColor: item.color }]}> 
+          <Text style={styles.photoBadgeText}>{item.emoji}</Text>
+        </View>
       </View>
     );
   };
@@ -199,9 +245,9 @@ export default function HomeScreen() {
     <ScreenContainer containerClassName="bg-background">
 
       {/* Header */}
-      <View style={[styles.header, { backgroundColor: colors.primary }]}>
+      <View style={[styles.header, { backgroundColor: colors.primary }]}> 
         {screen === 'board' && (
-          <Pressable onPress={handleBack} style={styles.backBtn}>
+          <Pressable onPress={handleBack} style={styles.backBtn} accessibilityRole="button">
             <Text style={styles.backBtnText}>← Voltar</Text>
           </Pressable>
         )}
@@ -215,7 +261,6 @@ export default function HomeScreen() {
         )}
       </View>
 
-      {/* Seletor de perfil — só na tela de categorias */}
       {screen === 'categories' && (
         <ProfileSwitcher
           profiles={profiles}
@@ -225,9 +270,8 @@ export default function HomeScreen() {
         />
       )}
 
-      {/* Frontpage / boas-vindas */}
       {screen === 'categories' && (
-        <View style={styles.heroWrap}>
+        <View style={styles.frontpage}> 
           <View style={[styles.heroCard, { backgroundColor: colors.surface, borderColor: colors.border }]}> 
             {activeProfile?.photoUri ? (
               <Image
@@ -244,18 +288,48 @@ export default function HomeScreen() {
               </View>
             )}
             <View style={styles.heroTextBlock}>
-              <Text style={[styles.heroTitle, { color: colors.foreground }]}> 
-                Comunicação mais simples, visual e acolhedora
-              </Text>
-              <Text style={[styles.heroSubtitle, { color: colors.muted }]}> 
-                Escolha uma categoria, toque nos cartões e monte frases para fala assistida.
-              </Text>
+              <Text style={[styles.heroTitle, { color: colors.foreground }]}>Toque para falar</Text>
+              <Text style={[styles.heroSubtitle, { color: colors.muted }]}>Fotos reais ajudam a reconhecer ações, pessoas e objetos mais rápido.</Text>
             </View>
           </View>
+
+          {quickCards.length > 0 && (
+            <View style={styles.quickSection}> 
+              <Text style={[styles.quickTitle, { color: colors.muted }]}>AÇÕES RÁPIDAS</Text>
+              <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.quickList}>
+                {quickCards.map((card) => {
+                  const isPressed = pressedId === card.id;
+                  return (
+                    <Pressable
+                      key={card.id}
+                      onPress={() => handleQuickPress(card)}
+                      style={({ pressed }) => [
+                        styles.quickCard,
+                        {
+                          backgroundColor: isPressed ? card.color : colors.surface,
+                          borderColor: card.color,
+                        },
+                        (pressed || isPressed) && { transform: [{ scale: 0.96 }] },
+                      ]}
+                      accessibilityRole="button"
+                      accessibilityLabel={`Falar ${card.label}`}
+                    >
+                      {renderCardVisual(card, isPressed, true)}
+                      <Text
+                        style={[styles.quickLabel, { color: isPressed ? '#FFFFFF' : colors.foreground }]}
+                        numberOfLines={1}
+                      >
+                        {card.label}
+                      </Text>
+                    </Pressable>
+                  );
+                })}
+              </ScrollView>
+            </View>
+          )}
         </View>
       )}
 
-      {/* Barra de status do cache — só quando ElevenLabs está ativo */}
       {screen === 'categories' && settings?.useElevenLabs && (
         <CacheStatusBar
           cacheReady={audio.cacheReady}
@@ -267,7 +341,6 @@ export default function HomeScreen() {
         />
       )}
 
-      {/* Barra de frase montada */}
       {screen === 'board' && (
         <View style={[
           styles.sentenceBar,
@@ -289,7 +362,7 @@ export default function HomeScreen() {
                   style={[styles.sentenceChip, { backgroundColor: card.color }]}
                 >
                   <Text style={styles.sentenceChipText}>
-                    {card.imageUri ? '📷' : card.emoji} {card.label}
+                    {card.imageUri || card.imageQuery ? '📷' : card.emoji} {card.label}
                   </Text>
                 </View>
               ))
@@ -305,6 +378,7 @@ export default function HomeScreen() {
                   { backgroundColor: colors.success },
                   pressed && { opacity: 0.8 },
                 ]}
+                accessibilityRole="button"
               >
                 <Text style={styles.speakBtnText}>🔊 Falar</Text>
               </Pressable>
@@ -325,7 +399,6 @@ export default function HomeScreen() {
         </View>
       )}
 
-      {/* Grade de categorias */}
       {screen === 'categories' && (
         <FlatList
           key={`categories-${categoryColumns}`}
@@ -337,6 +410,8 @@ export default function HomeScreen() {
             const count = getCardsByCategory(item.id)
               .filter((c) => !hiddenIds.has(c.id)).length
               + customCards.filter((c) => c.categoryId === item.id).length;
+            const imageUri = getCategoryImageUri(item);
+            const imageKey = `category-${item.id}`;
 
             return (
               <Pressable
@@ -349,10 +424,25 @@ export default function HomeScreen() {
                 accessibilityRole="button"
                 accessibilityLabel={`Categoria ${item.label}, ${count} cartões`}
               >
-                <View style={[styles.categoryIconBubble, { backgroundColor: '#FFFFFFAA' }]}> 
-                  <Text style={styles.categoryEmoji}>{item.emoji}</Text>
+                <View style={styles.categoryPhotoWrap}> 
+                  {imageUri && !failedImages.has(imageKey) ? (
+                    <Image
+                      source={{ uri: imageUri }}
+                      style={styles.categoryPhoto}
+                      resizeMode="cover"
+                      accessibilityIgnoresInvertColors
+                      onError={() => markImageFailed(imageKey)}
+                    />
+                  ) : (
+                    <View style={[styles.categoryIconBubble, { backgroundColor: '#FFFFFFAA' }]}> 
+                      <Text style={styles.categoryEmoji}>{item.emoji}</Text>
+                    </View>
+                  )}
+                  <View style={[styles.categoryBadge, { backgroundColor: item.color }]}> 
+                    <Text style={styles.categoryBadgeText}>{item.emoji}</Text>
+                  </View>
                 </View>
-                <Text style={[styles.categoryLabel, { color: item.color }]}> 
+                <Text style={[styles.categoryLabel, { color: item.color }]} numberOfLines={1}> 
                   {item.label}
                 </Text>
                 <Text style={[styles.categoryCount, { color: item.color }]}> 
@@ -364,7 +454,6 @@ export default function HomeScreen() {
         />
       )}
 
-      {/* Grade CAA */}
       {screen === 'board' && (
         <FlatList
           key={`board-${boardColumns}`}
@@ -429,46 +518,95 @@ const styles = StyleSheet.create({
   headerEmoji: { fontSize: 24 },
   backBtn: { position: 'absolute', left: 16, zIndex: 1 },
   backBtnText: { color: '#FFFFFF', fontSize: 16, fontWeight: '600' },
-  heroWrap: {
+  frontpage: {
     paddingHorizontal: 12,
     paddingTop: 12,
+    gap: 12,
   },
   heroCard: {
     flexDirection: 'row',
     alignItems: 'center',
-    borderRadius: 22,
+    borderRadius: 18,
     borderWidth: 1,
-    padding: 14,
+    padding: 12,
     gap: 12,
   },
   heroAvatar: {
-    width: 64,
-    height: 64,
-    borderRadius: 20,
+    width: 58,
+    height: 58,
+    borderRadius: 16,
     alignItems: 'center',
     justifyContent: 'center',
   },
   heroAvatarImage: {
-    width: 64,
-    height: 64,
-    borderRadius: 20,
+    width: 58,
+    height: 58,
+    borderRadius: 16,
     borderWidth: 2,
   },
   heroAvatarText: {
-    fontSize: 28,
+    fontSize: 26,
     fontWeight: '800',
   },
   heroTextBlock: {
     flex: 1,
-    gap: 4,
+    gap: 3,
   },
   heroTitle: {
-    fontSize: 16,
+    fontSize: 17,
     fontWeight: '800',
   },
   heroSubtitle: {
     fontSize: 13,
     lineHeight: 18,
+  },
+  quickSection: {
+    gap: 8,
+  },
+  quickTitle: {
+    fontSize: 11,
+    fontWeight: '800',
+    letterSpacing: 0.8,
+    paddingHorizontal: 2,
+  },
+  quickList: {
+    gap: 8,
+    paddingRight: 10,
+  },
+  quickCard: {
+    width: 98,
+    minHeight: 116,
+    borderRadius: 16,
+    borderWidth: 2,
+    padding: 8,
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 6,
+  },
+  quickPhotoWrap: {
+    width: 74,
+    height: 68,
+    borderRadius: 14,
+    overflow: 'hidden',
+    position: 'relative',
+  },
+  quickPhoto: {
+    width: '100%',
+    height: '100%',
+  },
+  quickEmojiBubble: {
+    width: '100%',
+    height: '100%',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  quickEmoji: {
+    fontSize: 34,
+  },
+  quickLabel: {
+    fontSize: 13,
+    fontWeight: '800',
+    textAlign: 'center',
   },
   sentenceBar: {
     flexDirection: 'row',
@@ -502,23 +640,46 @@ const styles = StyleSheet.create({
   categoryCard: {
     flex: 1,
     margin: 5,
-    borderRadius: 22,
+    borderRadius: 18,
     borderWidth: 2,
-    padding: 18,
+    padding: 10,
     alignItems: 'center',
     justifyContent: 'center',
-    minHeight: 144,
+    minHeight: 154,
     gap: 7,
   },
+  categoryPhotoWrap: {
+    width: '100%',
+    height: 86,
+    borderRadius: 14,
+    overflow: 'hidden',
+    position: 'relative',
+    backgroundColor: '#FFFFFF80',
+  },
+  categoryPhoto: {
+    width: '100%',
+    height: '100%',
+  },
   categoryIconBubble: {
-    width: 66,
-    height: 66,
-    borderRadius: 22,
+    width: '100%',
+    height: '100%',
     alignItems: 'center',
     justifyContent: 'center',
-    marginBottom: 2,
   },
   categoryEmoji: { fontSize: 42 },
+  categoryBadge: {
+    position: 'absolute',
+    right: 6,
+    bottom: 6,
+    width: 28,
+    height: 28,
+    borderRadius: 10,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  categoryBadgeText: {
+    fontSize: 16,
+  },
   categoryLabel: { fontSize: 16, fontWeight: '800', textAlign: 'center' },
   categoryCount: { fontSize: 12, fontWeight: '600', opacity: 0.72 },
   caaCard: {
@@ -526,24 +687,43 @@ const styles = StyleSheet.create({
     margin: 5,
     borderRadius: 18,
     borderWidth: 2,
-    padding: 10,
+    padding: 9,
     alignItems: 'center',
-    justifyContent: 'center',
-    minHeight: 124,
+    justifyContent: 'space-between',
+    minHeight: 148,
     gap: 8,
   },
+  caaPhotoWrap: {
+    width: '100%',
+    height: 92,
+    borderRadius: 15,
+    overflow: 'hidden',
+    position: 'relative',
+    backgroundColor: '#F3F4F6',
+  },
+  caaImage: {
+    width: '100%',
+    height: '100%',
+  },
   emojiBubble: {
-    width: 60,
-    height: 60,
-    borderRadius: 18,
+    width: '100%',
+    height: '100%',
     alignItems: 'center',
     justifyContent: 'center',
   },
-  caaImage: {
-    width: 68,
-    height: 68,
-    borderRadius: 18,
+  photoBadge: {
+    position: 'absolute',
+    right: 6,
+    bottom: 6,
+    width: 30,
+    height: 30,
+    borderRadius: 10,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  photoBadgeText: {
+    fontSize: 16,
   },
   caaEmoji: { fontSize: 38 },
-  caaLabel: { fontSize: 14, fontWeight: '800', textAlign: 'center', lineHeight: 18 },
+  caaLabel: { fontSize: 15, fontWeight: '800', textAlign: 'center', lineHeight: 18 },
 });

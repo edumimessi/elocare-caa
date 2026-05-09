@@ -1,0 +1,40 @@
+# App CAA — TODO
+
+- [x] Gerar logo e identidade visual do app
+- [x] Configurar tema de cores (azul royal + âmbar)
+- [x] Criar tela Home com grid de categorias
+- [x] Criar tela de Prancha de Comunicação com grid de cards
+- [x] Implementar barra de frase (acumular palavras)
+- [x] Integrar ElevenLabs para síntese de voz
+- [x] Implementar feedback visual e haptic ao tocar card
+- [x] Criar tela de Configurações com PIN de acesso
+- [ ] Criar sistema de perfis de pacientes
+- [x] Implementar persistência local (AsyncStorage)
+- [x] Criar categorias e cards padrão (Necessidades, Sentimentos, Ações, Alimentos, Objetos, Pessoas)
+- [ ] Implementar modo tela cheia (kiosk mode)
+- [x] Atualizar app.config.ts com nome e logo
+- [ ] Integrar tipos compartilhados (types/index.ts)
+- [ ] Integrar profiles-store.ts com CRUD de perfis
+- [ ] Integrar audio-cache.ts com cache offline ElevenLabs
+- [ ] Integrar telemetry.ts com registro clínico de uso
+- [ ] Integrar hooks (useProfiles, useAudioCache, useTelemetry)
+- [ ] Integrar ProfileSwitcher e CacheStatusBar
+- [ ] Integrar profile-form.tsx (tela criação/edição de perfil)
+- [ ] Integrar report.tsx (tela de relatório clínico)
+- [ ] Atualizar index.tsx com multi-perfil + cache + telemetria
+- [ ] Atualizar _layout.tsx com nova aba Relatório
+- [ ] Atualizar icon-symbol.tsx com novos ícones
+- [ ] Corrigir `as any` no width dinâmico (CacheStatusBar + report)
+- [ ] Corrigir dependência faltando no useEffect do index.tsx
+- [ ] Integrar testes unitários dos novos módulos
+- [x] Separar hooks em arquivos individuais (useProfiles.ts, useAudioCache.ts, useTelemetry.ts)
+- [x] Remover index.tsx duplicado (mnt/user-data/...)
+- [x] Implementar LGPD: consentimento do responsável
+- [x] Implementar LGPD: botão de apagar dados do perfil
+- [x] Implementar LGPD: exportação de dados (portabilidade)
+- [x] Implementar LGPD: política de retenção (máximo 90 dias)
+- [ ] Documentar roadmap de migração para backend intermediário (API key ElevenLabs)
+- [x] Correção v3: remover `as any` do CacheStatusBar.tsx (width dinâmico)
+- [x] Correção v3: remover `as any` do report.tsx + adicionar try/catch e estado de erro
+- [x] Correção v3: validação de data DD/MM/AAAA no profile-form.tsx
+- [x] Correção v3: desabilitar botão Excluir durante `saving` no profile-form.tsx

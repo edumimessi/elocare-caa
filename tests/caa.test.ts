@@ -1,0 +1,49 @@
+import { describe, it, expect } from 'vitest';
+import { CATEGORIES, CARDS, getCardsByCategory } from '../lib/caa-data';
+
+describe('CAA Data', () => {
+  it('should have 6 categories', () => {
+    expect(CATEGORIES).toHaveLength(6);
+  });
+
+  it('each category should have id, label, emoji, color, bgColor', () => {
+    for (const cat of CATEGORIES) {
+      expect(cat.id).toBeTruthy();
+      expect(cat.label).toBeTruthy();
+      expect(cat.emoji).toBeTruthy();
+      expect(cat.color).toBeTruthy();
+      expect(cat.bgColor).toBeTruthy();
+    }
+  });
+
+  it('should have at least 9 cards per category', () => {
+    for (const cat of CATEGORIES) {
+      const cards = getCardsByCategory(cat.id);
+      expect(cards.length).toBeGreaterThanOrEqual(9);
+    }
+  });
+
+  it('all cards should have required fields', () => {
+    for (const card of CARDS) {
+      expect(card.id).toBeTruthy();
+      expect(card.label).toBeTruthy();
+      expect(card.emoji).toBeTruthy();
+      expect(card.color).toBeTruthy();
+      expect(card.categoryId).toBeTruthy();
+    }
+  });
+
+  it('getCardsByCategory should return only cards of that category', () => {
+    const feelingCards = getCardsByCategory('feelings');
+    for (const card of feelingCards) {
+      expect(card.categoryId).toBe('feelings');
+    }
+  });
+
+  it('all card categoryIds should match a valid category', () => {
+    const categoryIds = new Set(CATEGORIES.map((c) => c.id));
+    for (const card of CARDS) {
+      expect(categoryIds.has(card.categoryId)).toBe(true);
+    }
+  });
+});

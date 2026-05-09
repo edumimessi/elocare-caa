@@ -1,8 +1,9 @@
 // ─────────────────────────────────────────────
 // app/(tabs)/index.tsx — VERSÃO FINAL
 // Multi-perfil + cache de áudio + telemetria integrados
+// Frontpage otimizada + suporte visual a fotos dos cartões
 // ─────────────────────────────────────────────
-import React, { useState, useCallback, useEffect } from 'react';
+import React, { useState, useCallback, useEffect, useMemo } from 'react';
 import {
   View,
   Text,
@@ -11,6 +12,8 @@ import {
   StyleSheet,
   ScrollView,
   Platform,
+  Image,
+  useWindowDimensions,
 } from 'react-native';
 import * as Haptics from 'expo-haptics';
 import { useRouter } from 'expo-router';
@@ -18,7 +21,6 @@ import { ScreenContainer } from '@/components/screen-container';
 import { useColors } from '@/hooks/use-colors';
 import {
   CATEGORIES,
-  CARDS,
   getCardsByCategory,
   CAACard,
   CAACategory,
@@ -40,6 +42,7 @@ type DisplayCard = CAACard & { imageUri?: string };
 export default function HomeScreen() {
   const colors  = useColors();
   const router  = useRouter();
+  const { width } = useWindowDimensions();
 
   const [screen, setScreen]             = useState<Screen>('categories');
   const [selectedCategory, setCategory] = useState<CAACategory | null>(null);
@@ -56,6 +59,17 @@ export default function HomeScreen() {
   );
 
   const telemetry = useTelemetry(activeProfile?.id ?? null);
+
+  const boardColumns = useMemo(() => {
+    if (width >= 900) return 5;
+    if (width >= 640) return 4;
+    return 3;
+  }, [width]);
+
+  const categoryColumns = useMemo(() => {
+    if (width >= 760) return 3;
+    return 2;
+  }, [width]);
 
   // Carrega settings uma vez
   useEffect(() => {
@@ -157,6 +171,28 @@ export default function HomeScreen() {
     router.push('../profile-form' as any);
   }, [router]);
 
+  const renderCardVisual = (item: DisplayCard, isPressed = false) => {
+    if (item.imageUri) {
+      return (
+        <Image
+          source={{ uri: item.imageUri }}
+          style={styles.caaImage}
+          resizeMode="cover"
+          accessibilityIgnoresInvertColors
+        />
+      );
+    }
+
+    return (
+      <View style={[
+        styles.emojiBubble,
+        { backgroundColor: isPressed ? 'rgba(255,255,255,0.22)' : item.color + '18' },
+      ]}>
+        <Text style={styles.caaEmoji}>{item.emoji}</Text>
+      </View>
+    );
+  };
+
   // ── RENDER ────────────────────────────────
 
   return (
@@ -189,6 +225,36 @@ export default function HomeScreen() {
         />
       )}
 
+      {/* Frontpage / boas-vindas */}
+      {screen === 'categories' && (
+        <View style={styles.heroWrap}>
+          <View style={[styles.heroCard, { backgroundColor: colors.surface, borderColor: colors.border }]}> 
+            {activeProfile?.photoUri ? (
+              <Image
+                source={{ uri: activeProfile.photoUri }}
+                style={[styles.heroAvatarImage, { borderColor: activeProfile.color }]}
+                resizeMode="cover"
+                accessibilityIgnoresInvertColors
+              />
+            ) : (
+              <View style={[styles.heroAvatar, { backgroundColor: (activeProfile?.color ?? colors.primary) + '20' }]}> 
+                <Text style={[styles.heroAvatarText, { color: activeProfile?.color ?? colors.primary }]}> 
+                  {activeProfile?.name?.charAt(0).toUpperCase() ?? 'E'}
+                </Text>
+              </View>
+            )}
+            <View style={styles.heroTextBlock}>
+              <Text style={[styles.heroTitle, { color: colors.foreground }]}> 
+                Comunicação mais simples, visual e acolhedora
+              </Text>
+              <Text style={[styles.heroSubtitle, { color: colors.muted }]}> 
+                Escolha uma categoria, toque nos cartões e monte frases para fala assistida.
+              </Text>
+            </View>
+          </View>
+        </View>
+      )}
+
       {/* Barra de status do cache — só quando ElevenLabs está ativo */}
       {screen === 'categories' && settings?.useElevenLabs && (
         <CacheStatusBar
@@ -213,7 +279,7 @@ export default function HomeScreen() {
             style={styles.sentenceScroll}
           >
             {sentence.length === 0 ? (
-              <Text style={[styles.sentencePlaceholder, { color: colors.muted }]}>
+              <Text style={[styles.sentencePlaceholder, { color: colors.muted }]}> 
                 Toque nos cartões para montar uma frase...
               </Text>
             ) : (
@@ -223,7 +289,7 @@ export default function HomeScreen() {
                   style={[styles.sentenceChip, { backgroundColor: card.color }]}
                 >
                   <Text style={styles.sentenceChipText}>
-                    {card.emoji} {card.label}
+                    {card.imageUri ? '📷' : card.emoji} {card.label}
                   </Text>
                 </View>
               ))
@@ -249,6 +315,8 @@ export default function HomeScreen() {
                   { backgroundColor: colors.error },
                   pressed && { opacity: 0.8 },
                 ]}
+                accessibilityRole="button"
+                accessibilityLabel="Limpar frase"
               >
                 <Text style={styles.clearBtnText}>✕</Text>
               </Pressable>
@@ -260,9 +328,10 @@ export default function HomeScreen() {
       {/* Grade de categorias */}
       {screen === 'categories' && (
         <FlatList
+          key={`categories-${categoryColumns}`}
           data={CATEGORIES}
           keyExtractor={(item) => item.id}
-          numColumns={2}
+          numColumns={categoryColumns}
           contentContainerStyle={styles.grid}
           renderItem={({ item }) => {
             const count = getCardsByCategory(item.id)
@@ -280,11 +349,13 @@ export default function HomeScreen() {
                 accessibilityRole="button"
                 accessibilityLabel={`Categoria ${item.label}, ${count} cartões`}
               >
-                <Text style={styles.categoryEmoji}>{item.emoji}</Text>
-                <Text style={[styles.categoryLabel, { color: item.color }]}>
+                <View style={[styles.categoryIconBubble, { backgroundColor: '#FFFFFFAA' }]}> 
+                  <Text style={styles.categoryEmoji}>{item.emoji}</Text>
+                </View>
+                <Text style={[styles.categoryLabel, { color: item.color }]}> 
                   {item.label}
                 </Text>
-                <Text style={[styles.categoryCount, { color: item.color }]}>
+                <Text style={[styles.categoryCount, { color: item.color }]}> 
                   {count} cartões
                 </Text>
               </Pressable>
@@ -296,9 +367,10 @@ export default function HomeScreen() {
       {/* Grade CAA */}
       {screen === 'board' && (
         <FlatList
+          key={`board-${boardColumns}`}
           data={visibleCards}
           keyExtractor={(item) => item.id}
-          numColumns={3}
+          numColumns={boardColumns}
           contentContainerStyle={styles.grid}
           renderItem={({ item }) => {
             const isPressed = pressedId === item.id;
@@ -312,13 +384,13 @@ export default function HomeScreen() {
                     borderColor: item.color,
                   },
                   (pressed || isPressed) && {
-                    transform: [{ scale: 0.92 }],
+                    transform: [{ scale: 0.94 }],
                   },
                 ]}
                 accessibilityRole="button"
                 accessibilityLabel={item.label}
               >
-                <Text style={styles.caaEmoji}>{item.emoji}</Text>
+                {renderCardVisual(item, isPressed)}
                 <Text
                   style={[
                     styles.caaLabel,
@@ -357,6 +429,47 @@ const styles = StyleSheet.create({
   headerEmoji: { fontSize: 24 },
   backBtn: { position: 'absolute', left: 16, zIndex: 1 },
   backBtnText: { color: '#FFFFFF', fontSize: 16, fontWeight: '600' },
+  heroWrap: {
+    paddingHorizontal: 12,
+    paddingTop: 12,
+  },
+  heroCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    borderRadius: 22,
+    borderWidth: 1,
+    padding: 14,
+    gap: 12,
+  },
+  heroAvatar: {
+    width: 64,
+    height: 64,
+    borderRadius: 20,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  heroAvatarImage: {
+    width: 64,
+    height: 64,
+    borderRadius: 20,
+    borderWidth: 2,
+  },
+  heroAvatarText: {
+    fontSize: 28,
+    fontWeight: '800',
+  },
+  heroTextBlock: {
+    flex: 1,
+    gap: 4,
+  },
+  heroTitle: {
+    fontSize: 16,
+    fontWeight: '800',
+  },
+  heroSubtitle: {
+    fontSize: 13,
+    lineHeight: 18,
+  },
   sentenceBar: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -385,32 +498,52 @@ const styles = StyleSheet.create({
   speakBtnText: { color: '#FFFFFF', fontSize: 14, fontWeight: '700' },
   clearBtn: { borderRadius: 20, paddingHorizontal: 12, paddingVertical: 8 },
   clearBtnText: { color: '#FFFFFF', fontSize: 14, fontWeight: '700' },
-  grid: { padding: 12, gap: 10 },
+  grid: { padding: 12, gap: 10, paddingBottom: 28 },
   categoryCard: {
     flex: 1,
     margin: 5,
-    borderRadius: 20,
+    borderRadius: 22,
     borderWidth: 2,
-    padding: 20,
+    padding: 18,
     alignItems: 'center',
     justifyContent: 'center',
-    minHeight: 140,
-    gap: 6,
+    minHeight: 144,
+    gap: 7,
   },
-  categoryEmoji: { fontSize: 48 },
-  categoryLabel: { fontSize: 16, fontWeight: '700', textAlign: 'center' },
-  categoryCount: { fontSize: 12, fontWeight: '500', opacity: 0.7 },
+  categoryIconBubble: {
+    width: 66,
+    height: 66,
+    borderRadius: 22,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 2,
+  },
+  categoryEmoji: { fontSize: 42 },
+  categoryLabel: { fontSize: 16, fontWeight: '800', textAlign: 'center' },
+  categoryCount: { fontSize: 12, fontWeight: '600', opacity: 0.72 },
   caaCard: {
     flex: 1,
     margin: 5,
-    borderRadius: 16,
+    borderRadius: 18,
     borderWidth: 2,
-    padding: 12,
+    padding: 10,
     alignItems: 'center',
     justifyContent: 'center',
-    minHeight: 110,
-    gap: 6,
+    minHeight: 124,
+    gap: 8,
   },
-  caaEmoji: { fontSize: 42 },
-  caaLabel: { fontSize: 13, fontWeight: '600', textAlign: 'center' },
+  emojiBubble: {
+    width: 60,
+    height: 60,
+    borderRadius: 18,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  caaImage: {
+    width: 68,
+    height: 68,
+    borderRadius: 18,
+  },
+  caaEmoji: { fontSize: 38 },
+  caaLabel: { fontSize: 14, fontWeight: '800', textAlign: 'center', lineHeight: 18 },
 });

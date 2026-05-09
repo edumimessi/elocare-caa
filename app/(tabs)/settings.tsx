@@ -14,25 +14,23 @@ import {
 import * as Haptics from 'expo-haptics';
 import { ScreenContainer } from '@/components/screen-container';
 import { useColors } from '@/hooks/use-colors';
-import { loadSettings, saveSettings, Settings } from '@/lib/settings-store';
+import { DEFAULT_SETTINGS, loadSettings, saveSettings, Settings } from '@/lib/settings-store';
 import { speakWithElevenLabs, speakWithSystemTTS } from '@/lib/voice-service';
 import { deleteAllData, exportUserData, getConsent } from '@/lib/lgpd';
 import * as Sharing from 'expo-sharing';
 
 type Mode = 'locked' | 'pin' | 'unlocked';
 
+function isValidPin(pin: string): boolean {
+  return /^\d{4,6}$/.test(pin);
+}
+
 export default function SettingsScreen() {
   const colors = useColors();
   const [mode, setMode] = useState<Mode>('locked');
   const [pinInput, setPinInput] = useState('');
   const [pinError, setPinError] = useState(false);
-  const [settings, setSettings] = useState<Settings>({
-    elevenLabsApiKey: '',
-    elevenLabsVoiceId: '21m00Tcm4TlvDq8ikWAM',
-    therapistPin: '1234',
-    patientName: 'Meu Paciente',
-    useElevenLabs: false,
-  });
+  const [settings, setSettings] = useState<Settings>(DEFAULT_SETTINGS);
   const [saved, setSaved] = useState(false);
 
   useEffect(() => {
@@ -53,6 +51,11 @@ export default function SettingsScreen() {
   }, [pinInput, settings.therapistPin]);
 
   const handleSave = useCallback(async () => {
+    if (!isValidPin(settings.therapistPin)) {
+      Alert.alert('PIN invalido', 'Use um PIN numerico com 4 a 6 digitos.');
+      return;
+    }
+
     await saveSettings(settings);
     if (Platform.OS !== 'web') Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
     setSaved(true);
@@ -60,7 +63,7 @@ export default function SettingsScreen() {
   }, [settings]);
 
   const handleTestVoice = useCallback(async () => {
-    const text = `Olá, ${settings.patientName}! Bem-vindo ao EloCare.`;
+    const text = `Ola, ${settings.patientName}! Bem-vindo ao EloCare.`;
     if (settings.useElevenLabs && settings.elevenLabsApiKey) {
       speakWithElevenLabs(text, settings.elevenLabsApiKey, settings.elevenLabsVoiceId);
     } else {
@@ -72,20 +75,41 @@ export default function SettingsScreen() {
     setMode('locked');
   }, []);
 
-  // Locked screen
+  const handleDeleteAllData = useCallback(() => {
+    Alert.alert(
+      'Apagar todos os dados',
+      'Esta acao e irreversivel. Todos os perfis, historico de comunicacao, cache de voz e configuracoes serao apagados permanentemente.',
+      [
+        { text: 'Cancelar', style: 'cancel' },
+        {
+          text: 'Apagar tudo',
+          style: 'destructive',
+          onPress: async () => {
+            const result = await deleteAllData();
+            if (result.success) {
+              setSettings(DEFAULT_SETTINGS);
+              setMode('locked');
+              Alert.alert('Dados apagados', 'Todos os dados foram removidos com sucesso.');
+            } else {
+              Alert.alert('Erro', result.error ?? 'Falha ao apagar dados.');
+            }
+          },
+        },
+      ]
+    );
+  }, []);
+
   if (mode === 'locked') {
     return (
       <ScreenContainer containerClassName="bg-background">
-        <View style={[styles.header, { backgroundColor: colors.primary }]}>
-          <Text style={styles.headerTitle}>⚙️ Configurações</Text>
+        <View style={[styles.header, { backgroundColor: colors.primary }]}> 
+          <Text style={styles.headerTitle}>Configuracoes</Text>
         </View>
         <View style={styles.lockedContainer}>
-          <Text style={[styles.lockIcon]}>🔒</Text>
-          <Text style={[styles.lockTitle, { color: colors.foreground }]}>
-            Área do Terapeuta
-          </Text>
-          <Text style={[styles.lockSubtitle, { color: colors.muted }]}>
-            Esta área é protegida para evitar alterações acidentais.
+          <Text style={styles.lockIcon}>🔒</Text>
+          <Text style={[styles.lockTitle, { color: colors.foreground }]}>Area do Terapeuta</Text>
+          <Text style={[styles.lockSubtitle, { color: colors.muted }]}> 
+            Esta area e protegida para evitar alteracoes acidentais.
           </Text>
           <Pressable
             onPress={() => setMode('pin')}
@@ -95,20 +119,19 @@ export default function SettingsScreen() {
               pressed && { opacity: 0.85 },
             ]}
           >
-            <Text style={styles.unlockBtnText}>🔓 Acessar com PIN</Text>
+            <Text style={styles.unlockBtnText}>Acessar com PIN</Text>
           </Pressable>
         </View>
       </ScreenContainer>
     );
   }
 
-  // PIN entry screen
   if (mode === 'pin') {
     return (
       <ScreenContainer containerClassName="bg-background">
-        <View style={[styles.header, { backgroundColor: colors.primary }]}>
+        <View style={[styles.header, { backgroundColor: colors.primary }]}> 
           <Pressable onPress={() => setMode('locked')} style={styles.backBtn}>
-            <Text style={styles.backBtnText}>← Voltar</Text>
+            <Text style={styles.backBtnText}>Voltar</Text>
           </Pressable>
           <Text style={styles.headerTitle}>Digite o PIN</Text>
         </View>
@@ -117,12 +140,8 @@ export default function SettingsScreen() {
           style={styles.pinContainer}
         >
           <Text style={styles.pinIcon}>🔑</Text>
-          <Text style={[styles.pinTitle, { color: colors.foreground }]}>
-            PIN de Acesso
-          </Text>
-          <Text style={[styles.pinSubtitle, { color: colors.muted }]}>
-            PIN padrão: 1234
-          </Text>
+          <Text style={[styles.pinTitle, { color: colors.foreground }]}>PIN de Acesso</Text>
+          <Text style={[styles.pinSubtitle, { color: colors.muted }]}>Informe o PIN configurado pelo terapeuta.</Text>
           <TextInput
             style={[
               styles.pinInput,
@@ -146,11 +165,7 @@ export default function SettingsScreen() {
             onSubmitEditing={handlePinSubmit}
             autoFocus
           />
-          {pinError && (
-            <Text style={[styles.pinError, { color: colors.error }]}>
-              PIN incorreto. Tente novamente.
-            </Text>
-          )}
+          {pinError && <Text style={[styles.pinError, { color: colors.error }]}>PIN incorreto. Tente novamente.</Text>}
           <Pressable
             onPress={handlePinSubmit}
             style={({ pressed }) => [
@@ -166,20 +181,18 @@ export default function SettingsScreen() {
     );
   }
 
-  // Unlocked settings screen
   return (
     <ScreenContainer containerClassName="bg-background">
-      <View style={[styles.header, { backgroundColor: colors.primary }]}>
-        <Text style={styles.headerTitle}>⚙️ Configurações</Text>
+      <View style={[styles.header, { backgroundColor: colors.primary }]}> 
+        <Text style={styles.headerTitle}>Configuracoes</Text>
         <Pressable onPress={handleLock} style={styles.lockBtn}>
           <Text style={styles.lockBtnText}>🔒</Text>
         </Pressable>
       </View>
 
       <ScrollView contentContainerStyle={styles.scrollContent}>
-        {/* Patient Profile */}
-        <View style={[styles.section, { backgroundColor: colors.surface, borderColor: colors.border }]}>
-          <Text style={[styles.sectionTitle, { color: colors.primary }]}>👤 Perfil do Paciente</Text>
+        <View style={[styles.section, { backgroundColor: colors.surface, borderColor: colors.border }]}> 
+          <Text style={[styles.sectionTitle, { color: colors.primary }]}>Perfil do Paciente</Text>
           <Text style={[styles.fieldLabel, { color: colors.muted }]}>Nome do Paciente</Text>
           <TextInput
             style={[styles.input, { backgroundColor: colors.background, borderColor: colors.border, color: colors.foreground }]}
@@ -191,14 +204,13 @@ export default function SettingsScreen() {
           />
         </View>
 
-        {/* Security */}
-        <View style={[styles.section, { backgroundColor: colors.surface, borderColor: colors.border }]}>
-          <Text style={[styles.sectionTitle, { color: colors.primary }]}>🔐 Segurança</Text>
-          <Text style={[styles.fieldLabel, { color: colors.muted }]}>PIN de Acesso (4-6 dígitos)</Text>
+        <View style={[styles.section, { backgroundColor: colors.surface, borderColor: colors.border }]}> 
+          <Text style={[styles.sectionTitle, { color: colors.primary }]}>Seguranca</Text>
+          <Text style={[styles.fieldLabel, { color: colors.muted }]}>PIN de Acesso (4-6 digitos)</Text>
           <TextInput
             style={[styles.input, { backgroundColor: colors.background, borderColor: colors.border, color: colors.foreground }]}
             value={settings.therapistPin}
-            onChangeText={(v) => setSettings((s) => ({ ...s, therapistPin: v }))}
+            onChangeText={(v) => setSettings((s) => ({ ...s, therapistPin: v.replace(/\D/g, '') }))}
             keyboardType="number-pad"
             maxLength={6}
             secureTextEntry
@@ -208,18 +220,13 @@ export default function SettingsScreen() {
           />
         </View>
 
-        {/* Voice Settings */}
-        <View style={[styles.section, { backgroundColor: colors.surface, borderColor: colors.border }]}>
-          <Text style={[styles.sectionTitle, { color: colors.primary }]}>🎙️ Configurações de Voz</Text>
+        <View style={[styles.section, { backgroundColor: colors.surface, borderColor: colors.border }]}> 
+          <Text style={[styles.sectionTitle, { color: colors.primary }]}>Configuracoes de Voz</Text>
 
           <View style={styles.switchRow}>
             <View style={styles.switchInfo}>
-              <Text style={[styles.switchLabel, { color: colors.foreground }]}>
-                Usar ElevenLabs (Voz Natural)
-              </Text>
-              <Text style={[styles.switchDesc, { color: colors.muted }]}>
-                Requer chave de API do ElevenLabs
-              </Text>
+              <Text style={[styles.switchLabel, { color: colors.foreground }]}>Usar ElevenLabs (Voz Natural)</Text>
+              <Text style={[styles.switchDesc, { color: colors.muted }]}>Requer chave de API do ElevenLabs</Text>
             </View>
             <Switch
               value={settings.useElevenLabs}
@@ -231,9 +238,7 @@ export default function SettingsScreen() {
 
           {settings.useElevenLabs && (
             <>
-              <Text style={[styles.fieldLabel, { color: colors.muted }]}>
-                Chave de API do ElevenLabs
-              </Text>
+              <Text style={[styles.fieldLabel, { color: colors.muted }]}>Chave de API do ElevenLabs</Text>
               <TextInput
                 style={[styles.input, { backgroundColor: colors.background, borderColor: colors.border, color: colors.foreground }]}
                 value={settings.elevenLabsApiKey}
@@ -245,9 +250,7 @@ export default function SettingsScreen() {
                 returnKeyType="done"
               />
 
-              <Text style={[styles.fieldLabel, { color: colors.muted }]}>
-                ID da Voz (Voice ID)
-              </Text>
+              <Text style={[styles.fieldLabel, { color: colors.muted }]}>ID da Voz (Voice ID)</Text>
               <TextInput
                 style={[styles.input, { backgroundColor: colors.background, borderColor: colors.border, color: colors.foreground }]}
                 value={settings.elevenLabsVoiceId}
@@ -257,9 +260,7 @@ export default function SettingsScreen() {
                 autoCapitalize="none"
                 returnKeyType="done"
               />
-              <Text style={[styles.hint, { color: colors.muted }]}>
-                Voz padrão: Rachel (natural, feminina). Encontre outros IDs em elevenlabs.io.
-              </Text>
+              <Text style={[styles.hint, { color: colors.muted }]}>Voz padrao: Rachel. Encontre outros IDs em elevenlabs.io.</Text>
             </>
           )}
 
@@ -271,26 +272,25 @@ export default function SettingsScreen() {
               pressed && { opacity: 0.85 },
             ]}
           >
-            <Text style={styles.testBtnText}>🔊 Testar Voz</Text>
+            <Text style={styles.testBtnText}>Testar Voz</Text>
           </Pressable>
         </View>
 
-        {/* Seção LGPD */}
-        <View style={[styles.section, { backgroundColor: colors.surface, borderColor: colors.border }]}>
-          <Text style={[styles.sectionTitle, { color: colors.primary }]}>🔒 Privacidade e LGPD</Text>
+        <View style={[styles.section, { backgroundColor: colors.surface, borderColor: colors.border }]}> 
+          <Text style={[styles.sectionTitle, { color: colors.primary }]}>Privacidade e LGPD</Text>
           <Pressable
             onPress={async () => {
               const consent = await getConsent();
               Alert.alert(
                 'Consentimento',
                 consent?.accepted
-                  ? `Consentimento registrado em ${new Date(consent.timestamp).toLocaleDateString('pt-BR')} por ${consent.responsibleName ?? 'não informado'}.`
-                  : 'Nenhum consentimento registrado.',
+                  ? `Consentimento registrado em ${new Date(consent.timestamp).toLocaleDateString('pt-BR')} por ${consent.responsibleName ?? 'nao informado'}.`
+                  : 'Nenhum consentimento registrado.'
               );
             }}
             style={({ pressed }) => [styles.lgpdBtn, { borderColor: colors.border }, pressed && { opacity: 0.7 }]}
           >
-            <Text style={[styles.lgpdBtnText, { color: colors.foreground }]}>📋 Ver registro de consentimento</Text>
+            <Text style={[styles.lgpdBtnText, { color: colors.foreground }]}>Ver registro de consentimento</Text>
           </Pressable>
           <Pressable
             onPress={async () => {
@@ -308,39 +308,19 @@ export default function SettingsScreen() {
             }}
             style={({ pressed }) => [styles.lgpdBtn, { borderColor: colors.border }, pressed && { opacity: 0.7 }]}
           >
-            <Text style={[styles.lgpdBtnText, { color: colors.foreground }]}>📤 Exportar meus dados</Text>
+            <Text style={[styles.lgpdBtnText, { color: colors.foreground }]}>Exportar meus dados</Text>
           </Pressable>
           <Pressable
-            onPress={() => {
-              Alert.alert(
-                'Apagar todos os dados',
-                'Esta ação é irreversível. Todos os perfis, histórico de comunicação e configurações serão apagados permanentemente.',
-                [
-                  { text: 'Cancelar', style: 'cancel' },
-                  {
-                    text: 'Apagar tudo',
-                    style: 'destructive',
-                    onPress: async () => {
-                      const result = await deleteAllData();
-                      if (result.success) {
-                        Alert.alert('Dados apagados', 'Todos os dados foram removidos com sucesso.');
-                      } else {
-                        Alert.alert('Erro', result.error ?? 'Falha ao apagar dados.');
-                      }
-                    },
-                  },
-                ],
-              );
-            }}
+            onPress={handleDeleteAllData}
             style={({ pressed }) => [styles.lgpdBtn, { borderColor: '#EF4444' }, pressed && { opacity: 0.7 }]}
           >
-            <Text style={[styles.lgpdBtnText, { color: '#EF4444' }]}>🗑️ Apagar todos os dados</Text>
+            <Text style={[styles.lgpdBtnText, { color: '#EF4444' }]}>Apagar todos os dados</Text>
           </Pressable>
-          <Text style={[styles.lgpdInfo, { color: colors.muted }]}>
-            Dados de telemetria são automaticamente apagados após 90 dias. Conforme a LGPD (Lei 13.709/2018).
+          <Text style={[styles.lgpdInfo, { color: colors.muted }]}> 
+            Dados de telemetria sao automaticamente apagados apos 90 dias. Conforme a LGPD (Lei 13.709/2018).
           </Text>
         </View>
-        {/* Save Button */}
+
         <Pressable
           onPress={handleSave}
           style={({ pressed }) => [
@@ -349,9 +329,7 @@ export default function SettingsScreen() {
             pressed && { opacity: 0.85 },
           ]}
         >
-          <Text style={styles.saveBtnText}>
-            {saved ? '✓ Salvo com sucesso!' : '💾 Salvar Configurações'}
-          </Text>
+          <Text style={styles.saveBtnText}>{saved ? 'Salvo com sucesso!' : 'Salvar Configuracoes'}</Text>
         </Pressable>
 
         <Text style={[styles.version, { color: colors.muted }]}>EloCare CAA v1.0.0</Text>
@@ -438,6 +416,7 @@ const styles = StyleSheet.create({
   },
   pinSubtitle: {
     fontSize: 14,
+    textAlign: 'center',
   },
   pinInput: {
     width: 160,

@@ -1,7 +1,3 @@
-// ─────────────────────────────────────────────
-// app/(tabs)/profile-form.tsx
-// Tela de criação e edição de perfil de paciente
-// ─────────────────────────────────────────────
 import React, { useState, useEffect, useCallback } from 'react';
 import {
   View,
@@ -20,16 +16,19 @@ import * as Haptics from 'expo-haptics';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import { ScreenContainer } from '@/components/screen-container';
 import { useColors } from '@/hooks/use-colors';
+import { CATEGORIES } from '@/lib/caa-data';
 import {
   createProfile,
   updateProfile,
   getProfile,
   deleteProfile,
   saveProfilePhoto,
+  addCustomCard,
+  removeCustomCard,
+  saveCustomCardImage,
 } from '@/lib/profiles-store';
 import { Profile } from '@/types';
 
-// Paleta de cores para o avatar
 const AVATAR_COLORS = [
   '#2563EB', '#DC2626', '#7C3AED', '#16A34A',
   '#D97706', '#0891B2', '#DB2777', '#65A30D',
@@ -63,23 +62,28 @@ export default function ProfileFormScreen() {
   const [form, setForm] = useState<FormState>(EMPTY_FORM);
   const [saving, setSaving] = useState(false);
   const [existingProfile, setExistingProfile] = useState<Profile | null>(null);
+  const [cardLabel, setCardLabel] = useState('');
+  const [cardCategoryId, setCardCategoryId] = useState(CATEGORIES[0]?.id ?? 'needs');
+  const [cardImageUri, setCardImageUri] = useState<string | null>(null);
+  const [addingCard, setAddingCard] = useState(false);
 
-  // Carrega dados se for edição
-  useEffect(() => {
-    if (!params.profileId) return;
-    getProfile(params.profileId).then((p) => {
-      if (!p) return;
-      setExistingProfile(p);
-      setForm({
-        name: p.name,
-        therapistName: p.therapistName ?? '',
-        diagnosis: p.diagnosis ?? '',
-        birthDate: p.birthDate ?? '',
-        color: p.color,
-        photoUri: p.photoUri ?? null,
-      });
+  const loadProfile = useCallback(async (profileId: string) => {
+    const profile = await getProfile(profileId);
+    if (!profile) return;
+    setExistingProfile(profile);
+    setForm({
+      name: profile.name,
+      therapistName: profile.therapistName ?? '',
+      diagnosis: profile.diagnosis ?? '',
+      birthDate: profile.birthDate ?? '',
+      color: profile.color,
+      photoUri: profile.photoUri ?? null,
     });
-  }, [params.profileId]);
+  }, []);
+
+  useEffect(() => {
+    if (params.profileId) loadProfile(params.profileId);
+  }, [params.profileId, loadProfile]);
 
   const update = useCallback(
     (field: keyof FormState, value: string) =>
@@ -87,9 +91,7 @@ export default function ProfileFormScreen() {
     []
   );
 
-  // Aplica máscara DD/MM/AAAA automaticamente
   const handleBirthDateChange = useCallback((raw: string) => {
-    // Remove tudo que não é dígito
     const digits = raw.replace(/\D/g, '').slice(0, 8);
     let masked = digits;
     if (digits.length > 4) {
@@ -100,15 +102,10 @@ export default function ProfileFormScreen() {
     update('birthDate', masked);
   }, [update]);
 
-  // ── FOTO ────────────────────────────────────
-
-  const handlePickPhoto = useCallback(async () => {
+  const pickImageFromGallery = useCallback(async (forCard = false) => {
     const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
     if (status !== 'granted') {
-      Alert.alert(
-        'Permissão necessária',
-        'Precisamos de acesso à galeria para adicionar a foto do paciente.'
-      );
+      Alert.alert('Permissao necessaria', 'Precisamos de acesso a galeria para escolher a foto.');
       return;
     }
 
@@ -116,48 +113,102 @@ export default function ProfileFormScreen() {
       mediaTypes: ImagePicker.MediaTypeOptions.Images,
       allowsEditing: true,
       aspect: [1, 1],
-      quality: 0.7,
+      quality: 0.75,
     });
 
     if (!result.canceled && result.assets[0]) {
-      setForm((prev) => ({ ...prev, photoUri: result.assets[0].uri }));
+      if (forCard) setCardImageUri(result.assets[0].uri);
+      else setForm((prev) => ({ ...prev, photoUri: result.assets[0].uri }));
     }
   }, []);
 
-  const handleTakePhoto = useCallback(async () => {
+  const takePhoto = useCallback(async (forCard = false) => {
     const { status } = await ImagePicker.requestCameraPermissionsAsync();
     if (status !== 'granted') {
-      Alert.alert(
-        'Permissão necessária',
-        'Precisamos de acesso à câmera para tirar a foto do paciente.'
-      );
+      Alert.alert('Permissao necessaria', 'Precisamos de acesso a camera para tirar a foto.');
       return;
     }
 
     const result = await ImagePicker.launchCameraAsync({
       allowsEditing: true,
       aspect: [1, 1],
-      quality: 0.7,
+      quality: 0.75,
     });
 
     if (!result.canceled && result.assets[0]) {
-      setForm((prev) => ({ ...prev, photoUri: result.assets[0].uri }));
+      if (forCard) setCardImageUri(result.assets[0].uri);
+      else setForm((prev) => ({ ...prev, photoUri: result.assets[0].uri }));
     }
   }, []);
 
   const handlePhotoPress = useCallback(() => {
     Alert.alert('Foto do paciente', 'Como deseja adicionar a foto?', [
-      { text: 'Câmera', onPress: handleTakePhoto },
-      { text: 'Galeria', onPress: handlePickPhoto },
+      { text: 'Camera', onPress: () => takePhoto(false) },
+      { text: 'Galeria', onPress: () => pickImageFromGallery(false) },
       { text: 'Cancelar', style: 'cancel' },
     ]);
-  }, [handleTakePhoto, handlePickPhoto]);
+  }, [takePhoto, pickImageFromGallery]);
 
-  // ── SALVAR ───────────────────────────────────
+  const handleCardPhotoPress = useCallback(() => {
+    Alert.alert('Foto do cartao', 'Como deseja adicionar a foto?', [
+      { text: 'Camera', onPress: () => takePhoto(true) },
+      { text: 'Galeria', onPress: () => pickImageFromGallery(true) },
+      { text: 'Cancelar', style: 'cancel' },
+    ]);
+  }, [takePhoto, pickImageFromGallery]);
+
+  const handleAddCard = useCallback(async () => {
+    if (!existingProfile) return;
+    if (!cardLabel.trim()) {
+      Alert.alert('Nome obrigatorio', 'Informe o nome que sera falado no cartao.');
+      return;
+    }
+    if (!cardImageUri) {
+      Alert.alert('Foto obrigatoria', 'Adicione uma foto real para o cartao.');
+      return;
+    }
+
+    const category = CATEGORIES.find((cat) => cat.id === cardCategoryId) ?? CATEGORIES[0];
+    setAddingCard(true);
+    try {
+      const card = await addCustomCard(existingProfile.id, {
+        label: cardLabel.trim(),
+        imageUri: cardImageUri,
+        categoryId: category.id,
+        color: category.color,
+      });
+      if (card) {
+        await saveCustomCardImage(existingProfile.id, card.id, cardImageUri);
+      }
+      setCardLabel('');
+      setCardImageUri(null);
+      await loadProfile(existingProfile.id);
+      if (Platform.OS !== 'web') Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+    } catch {
+      Alert.alert('Erro', 'Nao foi possivel adicionar o cartao.');
+    } finally {
+      setAddingCard(false);
+    }
+  }, [existingProfile, cardLabel, cardImageUri, cardCategoryId, loadProfile]);
+
+  const handleRemoveCard = useCallback((cardId: string, label: string) => {
+    if (!existingProfile) return;
+    Alert.alert('Excluir cartao', `Excluir o cartao "${label}"?`, [
+      { text: 'Cancelar', style: 'cancel' },
+      {
+        text: 'Excluir',
+        style: 'destructive',
+        onPress: async () => {
+          await removeCustomCard(existingProfile.id, cardId);
+          await loadProfile(existingProfile.id);
+        },
+      },
+    ]);
+  }, [existingProfile, loadProfile]);
 
   const handleSave = useCallback(async () => {
     if (!form.name.trim()) {
-      Alert.alert('Nome obrigatório', 'Por favor, informe o nome do paciente.');
+      Alert.alert('Nome obrigatorio', 'Por favor, informe o nome do paciente.');
       return;
     }
 
@@ -168,7 +219,6 @@ export default function ProfileFormScreen() {
 
     try {
       if (isEditing && existingProfile) {
-        // Atualiza perfil existente
         await updateProfile(existingProfile.id, {
           name: form.name.trim(),
           therapistName: form.therapistName.trim() || undefined,
@@ -177,7 +227,6 @@ export default function ProfileFormScreen() {
           color: form.color,
         });
 
-        // Salva foto nova se foi alterada
         if (
           form.photoUri &&
           form.photoUri !== existingProfile.photoUri &&
@@ -186,7 +235,6 @@ export default function ProfileFormScreen() {
           await saveProfilePhoto(existingProfile.id, form.photoUri);
         }
       } else {
-        // Cria novo perfil
         const profile = await createProfile({
           name: form.name.trim(),
           therapistName: form.therapistName.trim() || undefined,
@@ -194,30 +242,25 @@ export default function ProfileFormScreen() {
           birthDate: form.birthDate.trim() || undefined,
         });
 
-        // Aplica cor personalizada
         await updateProfile(profile.id, { color: form.color });
-
-        // Salva foto se foi escolhida
         if (form.photoUri) {
           await saveProfilePhoto(profile.id, form.photoUri);
         }
       }
 
       router.back();
-    } catch (err) {
-      Alert.alert('Erro', 'Não foi possível salvar o perfil. Tente novamente.');
+    } catch {
+      Alert.alert('Erro', 'Nao foi possivel salvar o perfil. Tente novamente.');
     } finally {
       setSaving(false);
     }
   }, [form, isEditing, existingProfile, router]);
 
-  // ── DELETAR ──────────────────────────────────
-
   const handleDelete = useCallback(() => {
     if (!existingProfile) return;
     Alert.alert(
       'Excluir perfil',
-      `Tem certeza que deseja excluir o perfil de ${existingProfile.name}? Todos os dados de uso serão perdidos.`,
+      `Tem certeza que deseja excluir o perfil de ${existingProfile.name}? Todos os dados de uso serao perdidos.`,
       [
         { text: 'Cancelar', style: 'cancel' },
         {
@@ -232,8 +275,6 @@ export default function ProfileFormScreen() {
     );
   }, [existingProfile, router]);
 
-  // ── RENDER ───────────────────────────────────
-
   return (
     <ScreenContainer containerClassName="bg-background">
       <View style={[styles.header, { backgroundColor: colors.primary }]}>
@@ -243,14 +284,8 @@ export default function ProfileFormScreen() {
         <Text style={styles.headerTitle}>
           {isEditing ? 'Editar Paciente' : 'Novo Paciente'}
         </Text>
-        <Pressable
-          onPress={handleSave}
-          style={styles.saveBtn}
-          disabled={saving}
-        >
-          <Text style={styles.saveBtnText}>
-            {saving ? 'Salvando...' : 'Salvar'}
-          </Text>
+        <Pressable onPress={handleSave} style={styles.saveBtn} disabled={saving}>
+          <Text style={styles.saveBtnText}>{saving ? 'Salvando...' : 'Salvar'}</Text>
         </Pressable>
       </View>
 
@@ -259,8 +294,6 @@ export default function ProfileFormScreen() {
         style={{ flex: 1 }}
       >
         <ScrollView contentContainerStyle={styles.content}>
-
-          {/* Avatar + foto */}
           <View style={styles.avatarSection}>
             <Pressable
               onPress={handlePhotoPress}
@@ -269,81 +302,51 @@ export default function ProfileFormScreen() {
               accessibilityLabel="Adicionar foto do paciente"
             >
               {form.photoUri ? (
-                <Image
-                  source={{ uri: form.photoUri }}
-                  style={[styles.avatarLarge, { borderColor: form.color }]}
-                />
+                <Image source={{ uri: form.photoUri }} style={[styles.avatarLarge, { borderColor: form.color }]} />
               ) : (
-                <View style={[
-                  styles.avatarLarge,
-                  styles.avatarEmpty,
-                  { backgroundColor: form.color + '22', borderColor: form.color },
-                ]}>
+                <View style={[styles.avatarLarge, styles.avatarEmpty, { backgroundColor: form.color + '22', borderColor: form.color }]}>
                   <Text style={[styles.avatarInitialLarge, { color: form.color }]}>
                     {form.name ? form.name.charAt(0).toUpperCase() : '?'}
                   </Text>
                 </View>
               )}
               <View style={[styles.photoEditBadge, { backgroundColor: form.color }]}>
-                <Text style={styles.photoEditIcon}>📷</Text>
+                <Text style={styles.photoEditIcon}>+</Text>
               </View>
             </Pressable>
-            <Text style={[styles.photoHint, { color: colors.muted }]}>
-              Toque para adicionar foto
-            </Text>
+            <Text style={[styles.photoHint, { color: colors.muted }]}>Toque para adicionar foto</Text>
           </View>
 
-          {/* Seletor de cor */}
-          <Text style={[styles.fieldLabel, { color: colors.muted }]}>
-            COR DO PERFIL
-          </Text>
+          <Text style={[styles.fieldLabel, { color: colors.muted }]}>COR DO PERFIL</Text>
           <View style={styles.colorRow}>
-            {AVATAR_COLORS.map((c) => (
+            {AVATAR_COLORS.map((color) => (
               <Pressable
-                key={c}
-                onPress={() => update('color', c)}
-                style={[
-                  styles.colorDot,
-                  { backgroundColor: c },
-                  form.color === c && styles.colorDotSelected,
-                ]}
+                key={color}
+                onPress={() => update('color', color)}
+                style={[styles.colorDot, { backgroundColor: color }, form.color === color && styles.colorDotSelected]}
                 accessibilityRole="radio"
-                accessibilityState={{ checked: form.color === c }}
+                accessibilityState={{ checked: form.color === color }}
               />
             ))}
           </View>
 
-          {/* Nome — obrigatório */}
-          <Text style={[styles.fieldLabel, { color: colors.muted }]}>
-            NOME DO PACIENTE *
-          </Text>
+          <Text style={[styles.fieldLabel, { color: colors.muted }]}>NOME DO PACIENTE *</Text>
           <TextInput
-            style={[styles.input, {
-              backgroundColor: colors.surface,
-              borderColor: colors.border,
-              color: colors.foreground,
-            }]}
+            style={[styles.input, { backgroundColor: colors.surface, borderColor: colors.border, color: colors.foreground }]}
             value={form.name}
-            onChangeText={(v) => update('name', v)}
-            placeholder="Ex: Maria, João..."
+            onChangeText={(value) => update('name', value)}
+            placeholder="Ex: Maria, Joao..."
             placeholderTextColor={colors.muted}
             autoCapitalize="words"
             returnKeyType="next"
             maxLength={40}
           />
 
-          {/* Nome do terapeuta */}
-          <Text style={[styles.fieldLabel, { color: colors.muted }]}>
-            TERAPEUTA RESPONSÁVEL
-          </Text>
+          <Text style={[styles.fieldLabel, { color: colors.muted }]}>TERAPEUTA RESPONSAVEL</Text>
           <TextInput
-            style={[styles.input, {
-              backgroundColor: colors.surface,
-              borderColor: colors.border,
-              color: colors.foreground,
-            }]}
+            style={[styles.input, { backgroundColor: colors.surface, borderColor: colors.border, color: colors.foreground }]}
             value={form.therapistName}
-            onChangeText={(v) => update('therapistName', v)}
+            onChangeText={(value) => update('therapistName', value)}
             placeholder="Ex: Dra. Ana Lima"
             placeholderTextColor={colors.muted}
             autoCapitalize="words"
@@ -351,40 +354,24 @@ export default function ProfileFormScreen() {
             maxLength={60}
           />
 
-          {/* Diagnóstico — uso interno */}
           <View style={styles.fieldHeaderRow}>
-            <Text style={[styles.fieldLabel, { color: colors.muted }]}>
-              DIAGNÓSTICO
-            </Text>
-            <Text style={[styles.fieldHint, { color: colors.muted }]}>
-              uso interno
-            </Text>
+            <Text style={[styles.fieldLabel, { color: colors.muted }]}>DIAGNOSTICO</Text>
+            <Text style={[styles.fieldHint, { color: colors.muted }]}>uso interno</Text>
           </View>
           <TextInput
-            style={[styles.input, {
-              backgroundColor: colors.surface,
-              borderColor: colors.border,
-              color: colors.foreground,
-            }]}
+            style={[styles.input, { backgroundColor: colors.surface, borderColor: colors.border, color: colors.foreground }]}
             value={form.diagnosis}
-            onChangeText={(v) => update('diagnosis', v)}
-            placeholder="Ex: TEA nível 2"
+            onChangeText={(value) => update('diagnosis', value)}
+            placeholder="Ex: TEA nivel 2"
             placeholderTextColor={colors.muted}
             autoCapitalize="sentences"
             returnKeyType="next"
             maxLength={80}
           />
 
-          {/* Data de nascimento */}
-          <Text style={[styles.fieldLabel, { color: colors.muted }]}>
-            DATA DE NASCIMENTO
-          </Text>
+          <Text style={[styles.fieldLabel, { color: colors.muted }]}>DATA DE NASCIMENTO</Text>
           <TextInput
-            style={[styles.input, {
-              backgroundColor: colors.surface,
-              borderColor: colors.border,
-              color: colors.foreground,
-            }]}
+            style={[styles.input, { backgroundColor: colors.surface, borderColor: colors.border, color: colors.foreground }]}
             value={form.birthDate}
             onChangeText={handleBirthDateChange}
             placeholder="DD/MM/AAAA"
@@ -394,19 +381,99 @@ export default function ProfileFormScreen() {
             returnKeyType="done"
           />
 
-          {/* Aviso LGPD */}
-          <View style={[styles.lgpdBox, {
-            backgroundColor: colors.surface,
-            borderColor: colors.border,
-          }]}>
+          {isEditing && existingProfile ? (
+            <View style={[styles.cardSection, { backgroundColor: colors.surface, borderColor: colors.border }]}>
+              <Text style={[styles.sectionTitle, { color: colors.primary }]}>Cartoes personalizados</Text>
+              <Text style={[styles.sectionHint, { color: colors.muted }]}>
+                Use fotos reais do ambiente da crianca para criar cartoes familiares.
+              </Text>
+
+              <TextInput
+                style={[styles.input, { backgroundColor: colors.background, borderColor: colors.border, color: colors.foreground }]}
+                value={cardLabel}
+                onChangeText={setCardLabel}
+                placeholder="Nome do cartao. Ex: Meu copo"
+                placeholderTextColor={colors.muted}
+                maxLength={32}
+              />
+
+              <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.categoryPicker}>
+                {CATEGORIES.map((category) => {
+                  const selected = cardCategoryId === category.id;
+                  return (
+                    <Pressable
+                      key={category.id}
+                      onPress={() => setCardCategoryId(category.id)}
+                      style={[
+                        styles.categoryChip,
+                        {
+                          backgroundColor: selected ? category.color : colors.background,
+                          borderColor: category.color,
+                        },
+                      ]}
+                    >
+                      <Text style={{ color: selected ? '#FFFFFF' : category.color, fontWeight: '700' }}>
+                        {category.label}
+                      </Text>
+                    </Pressable>
+                  );
+                })}
+              </ScrollView>
+
+              <Pressable
+                onPress={handleCardPhotoPress}
+                style={[styles.cardPhotoPicker, { borderColor: colors.border, backgroundColor: colors.background }]}
+              >
+                {cardImageUri ? (
+                  <Image source={{ uri: cardImageUri }} style={styles.cardPhotoPreview} />
+                ) : (
+                  <Text style={[styles.cardPhotoText, { color: colors.muted }]}>Adicionar foto do cartao</Text>
+                )}
+              </Pressable>
+
+              <Pressable
+                onPress={handleAddCard}
+                disabled={addingCard}
+                style={({ pressed }) => [
+                  styles.addCardBtn,
+                  { backgroundColor: colors.primary },
+                  (pressed || addingCard) && { opacity: 0.75 },
+                ]}
+              >
+                <Text style={styles.addCardBtnText}>
+                  {addingCard ? 'Adicionando...' : 'Adicionar cartao'}
+                </Text>
+              </Pressable>
+
+              {(existingProfile.customCards ?? []).map((card) => (
+                <View key={card.id} style={[styles.customCardRow, { borderColor: colors.border }]}>
+                  <Image source={{ uri: card.imageUri }} style={styles.customCardImage} />
+                  <View style={styles.customCardInfo}>
+                    <Text style={[styles.customCardLabel, { color: colors.foreground }]}>{card.label}</Text>
+                    <Text style={[styles.customCardCategory, { color: colors.muted }]}>
+                      {CATEGORIES.find((cat) => cat.id === card.categoryId)?.label ?? card.categoryId}
+                    </Text>
+                  </View>
+                  <Pressable onPress={() => handleRemoveCard(card.id, card.label)} style={styles.removeCardBtn}>
+                    <Text style={[styles.removeCardText, { color: colors.error }]}>Excluir</Text>
+                  </Pressable>
+                </View>
+              ))}
+            </View>
+          ) : (
+            <View style={[styles.lgpdBox, { backgroundColor: colors.surface, borderColor: colors.border }]}>
+              <Text style={[styles.lgpdText, { color: colors.muted }]}>
+                Salve o paciente primeiro. Depois toque em Editar para adicionar cartoes com fotos reais.
+              </Text>
+            </View>
+          )}
+
+          <View style={[styles.lgpdBox, { backgroundColor: colors.surface, borderColor: colors.border }]}>
             <Text style={[styles.lgpdText, { color: colors.muted }]}>
-              🔒 Os dados deste paciente são armazenados apenas neste dispositivo
-              e nunca são enviados a terceiros. Em conformidade com a LGPD
-              (Lei 13.709/2018).
+              Os dados e fotos ficam armazenados apenas neste dispositivo.
             </Text>
           </View>
 
-          {/* Botão deletar — só na edição */}
           {isEditing && (
             <Pressable
               onPress={handleDelete}
@@ -423,7 +490,6 @@ export default function ProfileFormScreen() {
               </Text>
             </Pressable>
           )}
-
         </ScrollView>
       </KeyboardAvoidingView>
     </ScreenContainer>
@@ -483,7 +549,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  photoEditIcon: { fontSize: 14 },
+  photoEditIcon: { fontSize: 18, color: '#FFFFFF', fontWeight: '800' },
   photoHint: { fontSize: 12 },
   fieldHeaderRow: {
     flexDirection: 'row',
@@ -523,12 +589,92 @@ const styles = StyleSheet.create({
   colorDotSelected: {
     borderWidth: 3,
     borderColor: '#FFFFFF',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.25,
-    shadowRadius: 3,
     elevation: 4,
     transform: [{ scale: 1.15 }],
+  },
+  cardSection: {
+    borderRadius: 14,
+    borderWidth: 1,
+    padding: 14,
+    gap: 10,
+    marginTop: 18,
+  },
+  sectionTitle: {
+    fontSize: 17,
+    fontWeight: '800',
+  },
+  sectionHint: {
+    fontSize: 12,
+    lineHeight: 17,
+  },
+  categoryPicker: {
+    gap: 8,
+    paddingVertical: 2,
+  },
+  categoryChip: {
+    borderWidth: 1.5,
+    borderRadius: 18,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+  },
+  cardPhotoPicker: {
+    height: 124,
+    borderRadius: 14,
+    borderWidth: 1.5,
+    borderStyle: 'dashed',
+    alignItems: 'center',
+    justifyContent: 'center',
+    overflow: 'hidden',
+  },
+  cardPhotoPreview: {
+    width: '100%',
+    height: '100%',
+  },
+  cardPhotoText: {
+    fontSize: 14,
+    fontWeight: '700',
+  },
+  addCardBtn: {
+    borderRadius: 24,
+    paddingVertical: 13,
+    alignItems: 'center',
+  },
+  addCardBtnText: {
+    color: '#FFFFFF',
+    fontSize: 15,
+    fontWeight: '800',
+  },
+  customCardRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    borderWidth: 1,
+    borderRadius: 12,
+    padding: 8,
+    gap: 10,
+  },
+  customCardImage: {
+    width: 54,
+    height: 54,
+    borderRadius: 10,
+  },
+  customCardInfo: {
+    flex: 1,
+  },
+  customCardLabel: {
+    fontSize: 15,
+    fontWeight: '800',
+  },
+  customCardCategory: {
+    fontSize: 12,
+    marginTop: 2,
+  },
+  removeCardBtn: {
+    paddingHorizontal: 8,
+    paddingVertical: 6,
+  },
+  removeCardText: {
+    fontSize: 13,
+    fontWeight: '700',
   },
   lgpdBox: {
     borderRadius: 12,

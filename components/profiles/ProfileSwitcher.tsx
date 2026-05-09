@@ -19,6 +19,7 @@ type Props = {
   activeProfileId: string | null;
   onSwitch: (id: string) => void;
   onAdd?: () => void;
+  onEdit?: (id: string) => void;
 };
 
 export function ProfileSwitcher({
@@ -26,6 +27,7 @@ export function ProfileSwitcher({
   activeProfileId,
   onSwitch,
   onAdd,
+  onEdit,
 }: Props) {
   const colors = useColors();
 
@@ -90,6 +92,24 @@ export function ProfileSwitcher({
         })}
 
         {/* Botão adicionar perfil */}
+        {activeProfileId && onEdit && (
+          <Pressable
+            onPress={() => onEdit(activeProfileId)}
+            style={({ pressed }) => [
+              styles.chip,
+              styles.editChip,
+              { borderColor: colors.primary },
+              pressed && { opacity: 0.7 },
+            ]}
+            accessibilityRole="button"
+            accessibilityLabel="Editar paciente ativo"
+          >
+            <Text style={[styles.chipLabel, { color: colors.primary }]}>
+              Editar
+            </Text>
+          </Pressable>
+        )}
+
         {onAdd && (
           <Pressable
             onPress={onAdd}
@@ -134,6 +154,9 @@ const styles = StyleSheet.create({
     gap: 6,
   },
   addChip: {
+    backgroundColor: 'transparent',
+  },
+  editChip: {
     backgroundColor: 'transparent',
   },
   avatar: {

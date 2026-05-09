@@ -197,6 +197,34 @@ export async function removeCustomCard(
   });
 }
 
+export async function saveCustomCardImage(
+  profileId: string,
+  cardId: string,
+  sourceUri: string
+): Promise<string> {
+  const profile = await getProfile(profileId);
+  if (!profile) throw new Error('Profile not found');
+
+  const dir = `${FileSystem.documentDirectory}profiles/${profileId}/cards/`;
+  await FileSystem.makeDirectoryAsync(dir, { intermediates: true });
+
+  const dest = `${dir}${cardId}.jpg`;
+  const existing = await FileSystem.getInfoAsync(dest);
+  if (existing.exists) {
+    await FileSystem.deleteAsync(dest, { idempotent: true });
+  }
+
+  await FileSystem.copyAsync({ from: sourceUri, to: dest });
+
+  await updateProfile(profileId, {
+    customCards: (profile.customCards ?? []).map((card) =>
+      card.id === cardId ? { ...card, imageUri: dest } : card
+    ),
+  });
+
+  return dest;
+}
+
 export async function toggleCardVisibility(
   profileId: string,
   cardId: string,

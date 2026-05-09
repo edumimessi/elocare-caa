@@ -171,6 +171,10 @@ export default function HomeScreen() {
     router.push('../profile-form' as any);
   }, [router]);
 
+  const handleEditProfile = useCallback((profileId: string) => {
+    router.push({ pathname: '/profile-form', params: { profileId } } as any);
+  }, [router]);
+
   const renderCardVisual = (item: DisplayCard, isPressed = false) => {
     if (item.imageUri) {
       return (
@@ -222,6 +226,7 @@ export default function HomeScreen() {
           activeProfileId={activeProfile?.id ?? null}
           onSwitch={switchProfile}
           onAdd={handleAddProfile}
+          onEdit={handleEditProfile}
         />
       )}
 

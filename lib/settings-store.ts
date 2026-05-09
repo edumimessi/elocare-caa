@@ -1,4 +1,5 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import * as SecureStore from 'expo-secure-store';
 
 const KEYS = {
   ELEVENLABS_API_KEY: 'elocare_elevenlabs_api_key',
@@ -8,6 +9,11 @@ const KEYS = {
   USE_ELEVENLABS: 'elocare_use_elevenlabs',
 };
 
+export const SECURE_SETTING_KEYS = [
+  KEYS.ELEVENLABS_API_KEY,
+  KEYS.THERAPIST_PIN,
+] as const;
+
 export type Settings = {
   elevenLabsApiKey: string;
   elevenLabsVoiceId: string;
@@ -16,7 +22,7 @@ export type Settings = {
   useElevenLabs: boolean;
 };
 
-const DEFAULT_SETTINGS: Settings = {
+export const DEFAULT_SETTINGS: Settings = {
   elevenLabsApiKey: '',
   elevenLabsVoiceId: '21m00Tcm4TlvDq8ikWAM',
   therapistPin: '1234',
@@ -24,12 +30,40 @@ const DEFAULT_SETTINGS: Settings = {
   useElevenLabs: false,
 };
 
+async function loadSensitiveValue(key: string): Promise<string | null> {
+  try {
+    const secureValue = await SecureStore.getItemAsync(key);
+    if (secureValue !== null) return secureValue;
+  } catch {
+    // SecureStore may be unavailable on some runtimes; fall back below.
+  }
+
+  return AsyncStorage.getItem(key);
+}
+
+async function saveSensitiveValue(key: string, value: string): Promise<void> {
+  try {
+    if (value) {
+      await SecureStore.setItemAsync(key, value);
+    } else {
+      await SecureStore.deleteItemAsync(key);
+    }
+    await AsyncStorage.removeItem(key);
+  } catch {
+    if (value) {
+      await AsyncStorage.setItem(key, value);
+    } else {
+      await AsyncStorage.removeItem(key);
+    }
+  }
+}
+
 export async function loadSettings(): Promise<Settings> {
   try {
     const [apiKey, voiceId, pin, name, useEl] = await Promise.all([
-      AsyncStorage.getItem(KEYS.ELEVENLABS_API_KEY),
+      loadSensitiveValue(KEYS.ELEVENLABS_API_KEY),
       AsyncStorage.getItem(KEYS.ELEVENLABS_VOICE_ID),
-      AsyncStorage.getItem(KEYS.THERAPIST_PIN),
+      loadSensitiveValue(KEYS.THERAPIST_PIN),
       AsyncStorage.getItem(KEYS.PATIENT_NAME),
       AsyncStorage.getItem(KEYS.USE_ELEVENLABS),
     ]);
@@ -48,17 +82,26 @@ export async function loadSettings(): Promise<Settings> {
 
 export async function saveSettings(settings: Partial<Settings>): Promise<void> {
   const updates: [string, string][] = [];
+  const secureUpdates: Promise<void>[] = [];
 
-  if (settings.elevenLabsApiKey !== undefined)
-    updates.push([KEYS.ELEVENLABS_API_KEY, settings.elevenLabsApiKey]);
-  if (settings.elevenLabsVoiceId !== undefined)
+  if (settings.elevenLabsApiKey !== undefined) {
+    secureUpdates.push(saveSensitiveValue(KEYS.ELEVENLABS_API_KEY, settings.elevenLabsApiKey));
+  }
+  if (settings.elevenLabsVoiceId !== undefined) {
     updates.push([KEYS.ELEVENLABS_VOICE_ID, settings.elevenLabsVoiceId]);
-  if (settings.therapistPin !== undefined)
-    updates.push([KEYS.THERAPIST_PIN, settings.therapistPin]);
-  if (settings.patientName !== undefined)
+  }
+  if (settings.therapistPin !== undefined) {
+    secureUpdates.push(saveSensitiveValue(KEYS.THERAPIST_PIN, settings.therapistPin));
+  }
+  if (settings.patientName !== undefined) {
     updates.push([KEYS.PATIENT_NAME, settings.patientName]);
-  if (settings.useElevenLabs !== undefined)
+  }
+  if (settings.useElevenLabs !== undefined) {
     updates.push([KEYS.USE_ELEVENLABS, String(settings.useElevenLabs)]);
+  }
 
-  await AsyncStorage.multiSet(updates);
+  await Promise.all([
+    updates.length > 0 ? AsyncStorage.multiSet(updates) : Promise.resolve(),
+    ...secureUpdates,
+  ]);
 }

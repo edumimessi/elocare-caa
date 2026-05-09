@@ -16,7 +16,7 @@ import {
   useWindowDimensions,
 } from 'react-native';
 import * as Haptics from 'expo-haptics';
-import { useRouter } from 'expo-router';
+import { useFocusEffect, useRouter } from 'expo-router';
 import { ScreenContainer } from '@/components/screen-container';
 import { useColors } from '@/hooks/use-colors';
 import {
@@ -51,7 +51,7 @@ export default function HomeScreen() {
   const [settings, setSettings]         = useState<Settings | null>(null);
 
   // ── Módulos
-  const { profiles, activeProfile, switchProfile } = useProfiles();
+  const { profiles, activeProfile, switchProfile, reload: reloadProfiles } = useProfiles();
 
   const audio = useAudioCache(
     settings?.elevenLabsApiKey   ?? '',
@@ -75,6 +75,12 @@ export default function HomeScreen() {
   useEffect(() => {
     loadSettings().then(setSettings);
   }, []);
+
+  useFocusEffect(
+    useCallback(() => {
+      reloadProfiles();
+    }, [reloadProfiles])
+  );
 
   // Verifica cache ao carregar settings com ElevenLabs ativo
   useEffect(() => {
@@ -255,6 +261,20 @@ export default function HomeScreen() {
               <Text style={[styles.heroSubtitle, { color: colors.muted }]}> 
                 Escolha uma categoria, toque nos cartões e monte frases para fala assistida.
               </Text>
+              {activeProfile && (
+                <Pressable
+                  onPress={() => handleEditProfile(activeProfile.id)}
+                  style={({ pressed }) => [
+                    styles.heroEditBtn,
+                    { backgroundColor: activeProfile.color },
+                    pressed && { opacity: 0.82 },
+                  ]}
+                  accessibilityRole="button"
+                  accessibilityLabel="Editar perfil e cartoes personalizados"
+                >
+                  <Text style={styles.heroEditBtnText}>Editar perfil e cartoes</Text>
+                </Pressable>
+              )}
             </View>
           </View>
         </View>
@@ -474,6 +494,18 @@ const styles = StyleSheet.create({
   heroSubtitle: {
     fontSize: 13,
     lineHeight: 18,
+  },
+  heroEditBtn: {
+    alignSelf: 'flex-start',
+    borderRadius: 18,
+    marginTop: 6,
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+  },
+  heroEditBtnText: {
+    color: '#FFFFFF',
+    fontSize: 13,
+    fontWeight: '800',
   },
   sentenceBar: {
     flexDirection: 'row',

@@ -1,8 +1,8 @@
-// ─────────────────────────────────────────────
+// -------------------------------------------------------------
 // app/(tabs)/report.tsx
-// Tela de relatório clínico — área do terapeuta
-// ─────────────────────────────────────────────
-import React, { useState, useCallback } from 'react';
+// Tela de relatorio clinico - area do terapeuta
+// -------------------------------------------------------------
+import React, { useState, useCallback, useEffect } from 'react';
 import type { ViewStyle } from 'react-native';
 import {
   View,
@@ -28,25 +28,49 @@ const PERIOD_OPTIONS = [
 export default function ReportScreen() {
   const colors = useColors();
   const { profiles, activeProfile } = useProfiles();
-  const [selectedProfileId, setSelectedProfileId] = useState(
-    activeProfile?.id ?? null
-  );
+  const [selectedProfileId, setSelectedProfileId] = useState<string | null>(null);
   const [period, setPeriod] = useState(30);
   const [report, setReport] = useState<TelemetryReport | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  useEffect(() => {
+    if (selectedProfileId) return;
+    const fallbackProfile = activeProfile ?? profiles[0] ?? null;
+    if (fallbackProfile) {
+      setSelectedProfileId(fallbackProfile.id);
+    }
+  }, [activeProfile, profiles, selectedProfileId]);
+
+  const handleSelectProfile = useCallback((profileId: string) => {
+    setSelectedProfileId(profileId);
+    setReport(null);
+    setError(null);
+  }, []);
+
+  const handleSelectPeriod = useCallback((days: number) => {
+    setPeriod(days);
+    setReport(null);
+    setError(null);
+  }, []);
+
   const loadReport = useCallback(async () => {
-    if (!selectedProfileId) return;
+    if (!selectedProfileId) {
+      setError('Selecione um paciente para gerar o relatorio.');
+      return;
+    }
     setLoading(true);
     setError(null);
     try {
       const profile = profiles.find((p) => p.id === selectedProfileId);
-      if (!profile) return;
+      if (!profile) {
+        setError('Paciente nao encontrado. Tente selecionar outro perfil.');
+        return;
+      }
       const r = await generateReport(selectedProfileId, profile.name, period);
       setReport(r);
     } catch {
-      setError('Não foi possível gerar o relatório. Tente novamente.');
+      setError('Nao foi possivel gerar o relatorio. Tente novamente.');
     } finally {
       setLoading(false);
     }
@@ -55,7 +79,7 @@ export default function ReportScreen() {
   const handleShare = useCallback(async () => {
     if (!report) return;
     const text = await exportReportAsText(report);
-    Share.share({ message: text, title: `Relatório ${report.profileName}` });
+    Share.share({ message: text, title: `Relatorio ${report.profileName}` });
   }, [report]);
 
   const startDate = report
@@ -67,63 +91,63 @@ export default function ReportScreen() {
 
   return (
     <ScreenContainer containerClassName="bg-background">
-      <View style={[styles.header, { backgroundColor: colors.primary }]}>
-        <Text style={styles.headerTitle}>📊 Relatório Clínico</Text>
+      <View style={[styles.header, { backgroundColor: colors.primary }]}> 
+        <Text style={styles.headerTitle}>Relatorio Clinico</Text>
       </View>
 
       <ScrollView contentContainerStyle={styles.content}>
+        <Text style={[styles.sectionLabel, { color: colors.muted }]}>PACIENTE</Text>
+        {profiles.length === 0 ? (
+          <Text style={[styles.emptyText, { color: colors.muted }]}>Nenhum perfil cadastrado.</Text>
+        ) : (
+          <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.chips}>
+            {profiles.map((p) => (
+              <Pressable
+                key={p.id}
+                onPress={() => handleSelectProfile(p.id)}
+                style={[
+                  styles.chip,
+                  {
+                    backgroundColor: selectedProfileId === p.id ? p.color : colors.surface,
+                    borderColor: p.color,
+                  },
+                ]}
+              >
+                <Text
+                  style={{
+                    color: selectedProfileId === p.id ? '#FFF' : p.color,
+                    fontWeight: '600',
+                    fontSize: 14,
+                  }}
+                >
+                  {p.name}
+                </Text>
+              </Pressable>
+            ))}
+          </ScrollView>
+        )}
 
-        {/* Seleção de paciente */}
-        <Text style={[styles.sectionLabel, { color: colors.muted }]}>
-          PACIENTE
-        </Text>
-        <ScrollView horizontal showsHorizontalScrollIndicator={false}
-          style={styles.chips}>
-          {profiles.map((p) => (
-            <Pressable
-              key={p.id}
-              onPress={() => setSelectedProfileId(p.id)}
-              style={[
-                styles.chip,
-                {
-                  backgroundColor:
-                    selectedProfileId === p.id ? p.color : colors.surface,
-                  borderColor: p.color,
-                },
-              ]}
-            >
-              <Text style={{
-                color: selectedProfileId === p.id ? '#FFF' : p.color,
-                fontWeight: '600', fontSize: 14,
-              }}>
-                {p.name}
-              </Text>
-            </Pressable>
-          ))}
-        </ScrollView>
-
-        {/* Seleção de período */}
-        <Text style={[styles.sectionLabel, { color: colors.muted }]}>
-          PERÍODO
-        </Text>
+        <Text style={[styles.sectionLabel, { color: colors.muted }]}>PERIODO</Text>
         <View style={styles.periodRow}>
           {PERIOD_OPTIONS.map((opt) => (
             <Pressable
               key={opt.value}
-              onPress={() => setPeriod(opt.value)}
+              onPress={() => handleSelectPeriod(opt.value)}
               style={[
                 styles.periodChip,
                 {
-                  backgroundColor:
-                    period === opt.value ? colors.primary : colors.surface,
+                  backgroundColor: period === opt.value ? colors.primary : colors.surface,
                   borderColor: colors.border,
                 },
               ]}
             >
-              <Text style={{
-                color: period === opt.value ? '#FFF' : colors.foreground,
-                fontWeight: '600', fontSize: 13,
-              }}>
+              <Text
+                style={{
+                  color: period === opt.value ? '#FFF' : colors.foreground,
+                  fontWeight: '600',
+                  fontSize: 13,
+                }}
+              >
                 {opt.label}
               </Text>
             </Pressable>
@@ -132,76 +156,44 @@ export default function ReportScreen() {
 
         <Pressable
           onPress={loadReport}
+          disabled={loading || profiles.length === 0}
           style={({ pressed }) => [
             styles.generateBtn,
             { backgroundColor: colors.primary },
-            pressed && { opacity: 0.85 },
+            (pressed || loading || profiles.length === 0) && { opacity: 0.65 },
           ]}
         >
-          <Text style={styles.generateBtnText}>
-            {loading ? 'Gerando...' : '📋 Gerar Relatório'}
-          </Text>
+          <Text style={styles.generateBtnText}>{loading ? 'Gerando...' : 'Gerar Relatorio'}</Text>
         </Pressable>
 
-        {loading && (
-          <ActivityIndicator
-            color={colors.primary}
-            style={{ marginTop: 32 }}
-          />
-        )}
+        {loading && <ActivityIndicator color={colors.primary} style={{ marginTop: 32 }} />}
 
         {error && !loading && (
-          <View style={[styles.errorBox, { backgroundColor: '#FEE2E2', borderColor: '#EF4444' }]}>
-            <Text style={{ color: '#DC2626', fontSize: 14, fontWeight: '600' }}>
-              {error}
-            </Text>
+          <View style={[styles.errorBox, { backgroundColor: '#FEE2E2', borderColor: '#EF4444' }]}> 
+            <Text style={{ color: '#DC2626', fontSize: 14, fontWeight: '600' }}>{error}</Text>
           </View>
         )}
 
-        {/* Resultados */}
         {report && !loading && (
           <>
-            <Text style={[styles.periodInfo, { color: colors.muted }]}>
-              {startDate} a {endDate} · {report.profileName}
+            <Text style={[styles.periodInfo, { color: colors.muted }]}> 
+              {startDate} a {endDate} - {report.profileName}
             </Text>
 
-            {/* Cards de métricas */}
             <View style={styles.metricsRow}>
-              <MetricCard
-                label="Sessões"
-                value={report.totalSessions}
-                color={colors.primary}
-              />
-              <MetricCard
-                label="Cliques"
-                value={report.totalClicks}
-                color="#7C3AED"
-              />
-              <MetricCard
-                label="Frases"
-                value={report.totalSentences}
-                color="#16A34A"
-              />
+              <MetricCard label="Sessoes" value={report.totalSessions} color={colors.primary} />
+              <MetricCard label="Cliques" value={report.totalClicks} color="#7C3AED" />
+              <MetricCard label="Frases" value={report.totalSentences} color="#16A34A" />
             </View>
 
-            {/* Top vocabulário */}
             {report.topCards.length > 0 && (
               <>
-                <Text style={[styles.sectionLabel, { color: colors.muted }]}>
-                  TOP VOCABULÁRIO
-                </Text>
+                <Text style={[styles.sectionLabel, { color: colors.muted }]}>TOP VOCABULARIO</Text>
                 {report.topCards.slice(0, 8).map((card, i) => (
-                  <View
-                    key={card.cardId}
-                    style={[styles.rankRow, { borderBottomColor: colors.border }]}
-                  >
-                    <Text style={[styles.rankIndex, { color: colors.muted }]}>
-                      {i + 1}
-                    </Text>
-                    <Text style={[styles.rankLabel, { color: colors.foreground }]}>
-                      {card.label}
-                    </Text>
-                    <View style={[styles.rankBar, { backgroundColor: colors.border }]}>
+                  <View key={card.cardId} style={[styles.rankRow, { borderBottomColor: colors.border }]}> 
+                    <Text style={[styles.rankIndex, { color: colors.muted }]}>{i + 1}</Text>
+                    <Text style={[styles.rankLabel, { color: colors.foreground }]}>{card.label}</Text>
+                    <View style={[styles.rankBar, { backgroundColor: colors.border }]}> 
                       <View
                         style={[
                           styles.rankFill,
@@ -215,43 +207,30 @@ export default function ReportScreen() {
                         ]}
                       />
                     </View>
-                    <Text style={[styles.rankCount, { color: colors.muted }]}>
-                      {card.count}x
-                    </Text>
+                    <Text style={[styles.rankCount, { color: colors.muted }]}>{card.count}x</Text>
                   </View>
                 ))}
               </>
             )}
 
-            {/* Top categorias */}
             {report.topCategories.length > 0 && (
               <>
-                <Text style={[styles.sectionLabel, { color: colors.muted }]}>
-                  CATEGORIAS
-                </Text>
+                <Text style={[styles.sectionLabel, { color: colors.muted }]}>CATEGORIAS</Text>
                 {report.topCategories.map((cat) => (
-                  <View
-                    key={cat.categoryId}
-                    style={[styles.rankRow, { borderBottomColor: colors.border }]}
-                  >
-                    <Text style={[styles.rankLabel, { color: colors.foreground }]}>
-                      {cat.label}
-                    </Text>
-                    <Text style={[styles.rankCount, { color: colors.muted }]}>
-                      {cat.count} cliques
-                    </Text>
+                  <View key={cat.categoryId} style={[styles.rankRow, { borderBottomColor: colors.border }]}> 
+                    <Text style={[styles.rankLabel, { color: colors.foreground }]}>{cat.label}</Text>
+                    <Text style={[styles.rankCount, { color: colors.muted }]}>{cat.count} cliques</Text>
                   </View>
                 ))}
               </>
             )}
 
             {report.totalClicks === 0 && (
-              <Text style={[styles.emptyText, { color: colors.muted }]}>
-                Nenhum dado registrado neste período para este paciente.
+              <Text style={[styles.emptyText, { color: colors.muted }]}> 
+                Nenhum dado registrado neste periodo para este paciente.
               </Text>
             )}
 
-            {/* Botão compartilhar */}
             <Pressable
               onPress={handleShare}
               style={({ pressed }) => [
@@ -260,9 +239,7 @@ export default function ReportScreen() {
                 pressed && { opacity: 0.8 },
               ]}
             >
-              <Text style={[styles.shareBtnText, { color: colors.primary }]}>
-                📤 Compartilhar Relatório
-              </Text>
+              <Text style={[styles.shareBtnText, { color: colors.primary }]}>Compartilhar Relatorio</Text>
             </Pressable>
           </>
         )}
@@ -281,7 +258,7 @@ function MetricCard({
   color: string;
 }) {
   return (
-    <View style={[styles.metricCard, { borderColor: color + '33' }]}>
+    <View style={[styles.metricCard, { borderColor: color + '33' }]}> 
       <Text style={[styles.metricValue, { color }]}>{value}</Text>
       <Text style={styles.metricLabel}>{label}</Text>
     </View>

@@ -56,6 +56,7 @@ export default function HomeScreen() {
   const [sentence, setSentence]         = useState<DisplayCard[]>([]);
   const [pressedId, setPressedId]       = useState<string | null>(null);
   const [settings, setSettings]         = useState<Settings | null>(null);
+  const [imageEditMode, setImageEditMode] = useState(false);
 
   // ── Módulos
   const { profiles, activeProfile, switchProfile, reload: reloadProfiles } = useProfiles();
@@ -132,6 +133,7 @@ export default function HomeScreen() {
       Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     setCategory(cat);
     setSentence([]);
+    setImageEditMode(false);
     setScreen('board');
   }, []);
 
@@ -162,6 +164,12 @@ export default function HomeScreen() {
       : await ImagePicker.requestMediaLibraryPermissionsAsync();
 
     if (permission.status !== 'granted') {
+      Alert.alert(
+        'Permissao necessaria',
+        source === 'camera'
+          ? 'Ative a permissao de camera para trocar a foto do cartao.'
+          : 'Ative a permissao da galeria para trocar a foto do cartao.'
+      );
       return;
     }
 
@@ -236,6 +244,7 @@ export default function HomeScreen() {
     setScreen('categories');
     setCategory(null);
     setSentence([]);
+    setImageEditMode(false);
   }, []);
 
   const handleAddProfile = useCallback(() => {
@@ -285,10 +294,36 @@ export default function HomeScreen() {
             ? (activeProfile ? `💬 ${activeProfile.name}` : '💬 EloCare CAA')
             : selectedCategory?.label ?? ''}
         </Text>
-        {screen === 'board' && selectedCategory && (
-          <Text style={styles.headerEmoji}>{selectedCategory.emoji}</Text>
+        {screen === 'board' && (
+          <View style={styles.headerActions}>
+            {selectedCategory && <Text style={styles.headerEmoji}>{selectedCategory.emoji}</Text>}
+            <Pressable
+              onPress={() => setImageEditMode((prev) => !prev)}
+              style={[
+                styles.editImagesToggle,
+                { backgroundColor: imageEditMode ? '#FFFFFF' : 'rgba(255,255,255,0.18)' },
+              ]}
+            >
+              <Text
+                style={[
+                  styles.editImagesToggleText,
+                  { color: imageEditMode ? colors.primary : '#FFFFFF' },
+                ]}
+              >
+                {imageEditMode ? 'Fotos ON' : 'Editar fotos'}
+              </Text>
+            </Pressable>
+          </View>
         )}
       </View>
+
+      {screen === 'board' && imageEditMode && (
+        <View style={[styles.editModeBanner, { backgroundColor: colors.surface, borderBottomColor: colors.border }]}>
+          <Text style={[styles.editModeBannerText, { color: colors.foreground }]}>
+            Modo fotos ativo: toque em um cartao para escolher camera ou galeria.
+          </Text>
+        </View>
+      )}
 
       {/* Seletor de perfil — só na tela de categorias */}
       {screen === 'categories' && (
@@ -466,7 +501,13 @@ export default function HomeScreen() {
             const isPressed = pressedId === item.id;
             return (
               <Pressable
-                onPress={() => handleCardPress(item)}
+                onPress={() => {
+                  if (imageEditMode && !item.id.startsWith('custom_')) {
+                    handleCardLongPress(item);
+                    return;
+                  }
+                  handleCardPress(item);
+                }}
                 onLongPress={() => {
                   if (!item.id.startsWith('custom_')) handleCardLongPress(item);
                 }}
@@ -484,6 +525,11 @@ export default function HomeScreen() {
                 accessibilityLabel={item.label}
               >
                 {renderCardVisual(item, isPressed)}
+                {imageEditMode && !item.id.startsWith('custom_') && (
+                  <View style={styles.editPhotoBadge}>
+                    <Text style={styles.editPhotoBadgeText}>FOTO</Text>
+                  </View>
+                )}
                 <Text
                   style={[
                     styles.caaLabel,
@@ -519,9 +565,35 @@ const styles = StyleSheet.create({
     flex: 1,
     textAlign: 'center',
   },
+  headerActions: {
+    position: 'absolute',
+    right: 12,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
   headerEmoji: { fontSize: 24 },
   backBtn: { position: 'absolute', left: 16, zIndex: 1 },
   backBtnText: { color: '#FFFFFF', fontSize: 16, fontWeight: '600' },
+  editImagesToggle: {
+    borderRadius: 16,
+    paddingHorizontal: 10,
+    paddingVertical: 7,
+  },
+  editImagesToggleText: {
+    fontSize: 12,
+    fontWeight: '800',
+  },
+  editModeBanner: {
+    borderBottomWidth: 1,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+  },
+  editModeBannerText: {
+    fontSize: 13,
+    fontWeight: '700',
+    textAlign: 'center',
+  },
   heroWrap: {
     paddingHorizontal: 12,
     paddingTop: 12,
@@ -636,6 +708,20 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     minHeight: 124,
     gap: 8,
+  },
+  editPhotoBadge: {
+    position: 'absolute',
+    top: 7,
+    right: 7,
+    backgroundColor: '#111827',
+    borderRadius: 10,
+    paddingHorizontal: 7,
+    paddingVertical: 3,
+  },
+  editPhotoBadgeText: {
+    color: '#FFFFFF',
+    fontSize: 10,
+    fontWeight: '900',
   },
   emojiBubble: {
     width: 60,

@@ -13,9 +13,12 @@ import {
   ScrollView,
   Platform,
   Image,
+  Alert,
+  AlertButton,
   useWindowDimensions,
 } from 'react-native';
 import * as Haptics from 'expo-haptics';
+import * as ImagePicker from 'expo-image-picker';
 import { useFocusEffect, useRouter } from 'expo-router';
 import { ScreenContainer } from '@/components/screen-container';
 import { useColors } from '@/hooks/use-colors';
@@ -26,6 +29,10 @@ import {
   CAACategory,
 } from '@/lib/caa-data';
 import { loadSettings, Settings } from '@/lib/settings-store';
+import {
+  removeCardImageOverride,
+  saveCardImageOverride,
+} from '@/lib/profiles-store';
 
 // Módulos v2
 import { useProfiles }    from '@/hooks/useProfiles';
@@ -99,7 +106,11 @@ export default function HomeScreen() {
     ? [
         // Cartões padrão não ocultos
         ...getCardsByCategory(selectedCategory.id)
-          .filter((c) => !hiddenIds.has(c.id)),
+          .filter((c) => !hiddenIds.has(c.id))
+          .map((c): DisplayCard => ({
+            ...c,
+            imageUri: activeProfile?.cardImageOverrides?.[c.id],
+          })),
         // Cartões personalizados desta categoria
         ...customCards
           .filter((c) => c.categoryId === selectedCategory.id)
@@ -142,6 +153,60 @@ export default function HomeScreen() {
     // Telemetria
     telemetry.logClick(card.id, card.label, card.categoryId);
   }, [audio, telemetry, settings?.useElevenLabs]);
+
+  const pickCardPhoto = useCallback(async (card: DisplayCard, source: 'camera' | 'gallery') => {
+    if (!activeProfile) return;
+
+    const permission = source === 'camera'
+      ? await ImagePicker.requestCameraPermissionsAsync()
+      : await ImagePicker.requestMediaLibraryPermissionsAsync();
+
+    if (permission.status !== 'granted') {
+      return;
+    }
+
+    const result = source === 'camera'
+      ? await ImagePicker.launchCameraAsync({
+          mediaTypes: ImagePicker.MediaTypeOptions.Images,
+          allowsEditing: true,
+          aspect: [1, 1],
+          quality: 0.82,
+        })
+      : await ImagePicker.launchImageLibraryAsync({
+          mediaTypes: ImagePicker.MediaTypeOptions.Images,
+          allowsEditing: true,
+          aspect: [1, 1],
+          quality: 0.82,
+        });
+
+    if (result.canceled || !result.assets[0]) return;
+
+    await saveCardImageOverride(activeProfile.id, card.id, result.assets[0].uri);
+    await reloadProfiles();
+  }, [activeProfile, reloadProfiles]);
+
+  const handleCardLongPress = useCallback((card: DisplayCard) => {
+    if (!activeProfile) return;
+
+    const actions: AlertButton[] = [
+      { text: 'Camera', onPress: () => pickCardPhoto(card, 'camera') },
+      { text: 'Galeria', onPress: () => pickCardPhoto(card, 'gallery') },
+    ];
+
+    if (card.imageUri) {
+      actions.push({
+        text: 'Remover foto',
+        onPress: async () => {
+          await removeCardImageOverride(activeProfile.id, card.id);
+          await reloadProfiles();
+        },
+      });
+    }
+
+    actions.push({ text: 'Cancelar', onPress: () => undefined });
+
+    Alert.alert('Foto do cartao', `Escolha uma foto real para "${card.label}".`, actions);
+  }, [activeProfile, pickCardPhoto, reloadProfiles]);
 
   const handleSpeakSentence = useCallback(async () => {
     if (sentence.length === 0) return;
@@ -402,6 +467,9 @@ export default function HomeScreen() {
             return (
               <Pressable
                 onPress={() => handleCardPress(item)}
+                onLongPress={() => {
+                  if (!item.id.startsWith('custom_')) handleCardLongPress(item);
+                }}
                 style={({ pressed }) => [
                   styles.caaCard,
                   {

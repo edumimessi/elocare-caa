@@ -14,6 +14,7 @@ export type Profile = {
   createdAt: string;           // ISO datetime
   updatedAt: string;
   customCards?: CustomCard[];  // cartões personalizados do perfil
+  cardImageOverrides?: Record<string, string>;
   hiddenCardIds?: string[];    // cartões desativados para este perfil
 };
 

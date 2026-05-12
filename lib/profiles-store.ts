@@ -119,6 +119,13 @@ export async function deleteProfile(id: string): Promise<void> {
       }
     }
   }
+  if (profile?.cardImageOverrides) {
+    for (const uri of Object.values(profile.cardImageOverrides)) {
+      if (uri?.startsWith('file://')) {
+        await FileSystem.deleteAsync(uri, { idempotent: true });
+      }
+    }
+  }
 
   // Remove do storage
   await AsyncStorage.removeItem(KEYS.PROFILE_PREFIX + id);
@@ -223,6 +230,53 @@ export async function saveCustomCardImage(
   });
 
   return dest;
+}
+
+export async function saveCardImageOverride(
+  profileId: string,
+  cardId: string,
+  sourceUri: string
+): Promise<string> {
+  const profile = await getProfile(profileId);
+  if (!profile) throw new Error('Profile not found');
+
+  const dir = `${FileSystem.documentDirectory}profiles/${profileId}/standard-cards/`;
+  await FileSystem.makeDirectoryAsync(dir, { intermediates: true });
+
+  const dest = `${dir}${cardId}.jpg`;
+  const existing = await FileSystem.getInfoAsync(dest);
+  if (existing.exists) {
+    await FileSystem.deleteAsync(dest, { idempotent: true });
+  }
+
+  await FileSystem.copyAsync({ from: sourceUri, to: dest });
+
+  await updateProfile(profileId, {
+    cardImageOverrides: {
+      ...(profile.cardImageOverrides ?? {}),
+      [cardId]: dest,
+    },
+  });
+
+  return dest;
+}
+
+export async function removeCardImageOverride(
+  profileId: string,
+  cardId: string
+): Promise<void> {
+  const profile = await getProfile(profileId);
+  if (!profile) return;
+
+  const current = profile.cardImageOverrides ?? {};
+  const uri = current[cardId];
+  if (uri?.startsWith('file://')) {
+    await FileSystem.deleteAsync(uri, { idempotent: true });
+  }
+
+  const next = { ...current };
+  delete next[cardId];
+  await updateProfile(profileId, { cardImageOverrides: next });
 }
 
 export async function toggleCardVisibility(

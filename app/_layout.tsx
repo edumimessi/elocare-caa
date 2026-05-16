@@ -107,6 +107,7 @@ export default function RootLayout() {
           <Stack screenOptions={{ headerShown: false }}>
             <Stack.Screen name="(tabs)" />
             <Stack.Screen name="profile-form" />
+            <Stack.Screen name="card-images" />
             <Stack.Screen name="oauth/callback" />
           </Stack>
           <StatusBar style="auto" />

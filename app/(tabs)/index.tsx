@@ -255,6 +255,10 @@ export default function HomeScreen() {
     router.push({ pathname: '/profile-form', params: { profileId } } as any);
   }, [router]);
 
+  const handleEditCardImages = useCallback(() => {
+    router.push('/card-images' as any);
+  }, [router]);
+
   const renderCardVisual = (item: DisplayCard, isPressed = false) => {
     if (item.imageUri) {
       return (
@@ -362,18 +366,34 @@ export default function HomeScreen() {
                 Escolha uma categoria, toque nos cartões e monte frases para fala assistida.
               </Text>
               {activeProfile && (
-                <Pressable
-                  onPress={() => handleEditProfile(activeProfile.id)}
-                  style={({ pressed }) => [
-                    styles.heroEditBtn,
-                    { backgroundColor: activeProfile.color },
-                    pressed && { opacity: 0.82 },
-                  ]}
-                  accessibilityRole="button"
-                  accessibilityLabel="Editar perfil e cartoes personalizados"
-                >
-                  <Text style={styles.heroEditBtnText}>Editar perfil e cartoes</Text>
-                </Pressable>
+                <View style={styles.heroActions}>
+                  <Pressable
+                    onPress={handleEditCardImages}
+                    style={({ pressed }) => [
+                      styles.heroEditBtn,
+                      { backgroundColor: activeProfile.color },
+                      pressed && { opacity: 0.82 },
+                    ]}
+                    accessibilityRole="button"
+                    accessibilityLabel="Editar fotos dos cartoes"
+                  >
+                    <Text style={styles.heroEditBtnText}>Editar fotos dos cartoes</Text>
+                  </Pressable>
+                  <Pressable
+                    onPress={() => handleEditProfile(activeProfile.id)}
+                    style={({ pressed }) => [
+                      styles.heroSecondaryBtn,
+                      { borderColor: activeProfile.color },
+                      pressed && { opacity: 0.82 },
+                    ]}
+                    accessibilityRole="button"
+                    accessibilityLabel="Editar perfil"
+                  >
+                    <Text style={[styles.heroSecondaryBtnText, { color: activeProfile.color }]}>
+                      Perfil
+                    </Text>
+                  </Pressable>
+                </View>
               )}
             </View>
           </View>
@@ -635,15 +655,31 @@ const styles = StyleSheet.create({
     fontSize: 13,
     lineHeight: 18,
   },
+  heroActions: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+    marginTop: 6,
+  },
   heroEditBtn: {
     alignSelf: 'flex-start',
     borderRadius: 18,
-    marginTop: 6,
     paddingHorizontal: 14,
     paddingVertical: 8,
   },
   heroEditBtnText: {
     color: '#FFFFFF',
+    fontSize: 13,
+    fontWeight: '800',
+  },
+  heroSecondaryBtn: {
+    alignSelf: 'flex-start',
+    borderRadius: 18,
+    borderWidth: 1.5,
+    paddingHorizontal: 14,
+    paddingVertical: 7,
+  },
+  heroSecondaryBtnText: {
     fontSize: 13,
     fontWeight: '800',
   },

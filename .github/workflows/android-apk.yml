@@ -7,7 +7,7 @@ jobs:
   build-android-apk:
     name: Build APK
     runs-on: ubuntu-latest
-    timeout-minutes: 45
+    timeout-minutes: 60
 
     steps:
       - name: Checkout repository
@@ -36,13 +36,31 @@ jobs:
       - name: Generate Android project
         run: npx expo prebuild --platform android --clean --non-interactive
 
-      - name: Build debug APK
+      - name: Allow release build with debug signing
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          path = Path("android/app/build.gradle")
+          text = path.read_text()
+
+          if "signingConfig signingConfigs.debug" not in text:
+              text = text.replace(
+                  "release {\n",
+                  "release {\n            signingConfig signingConfigs.debug\n",
+                  1,
+              )
+
+          path.write_text(text)
+          PY
+
+      - name: Build release APK
         working-directory: android
-        run: ./gradlew assembleDebug --no-daemon
+        run: ./gradlew assembleRelease --no-daemon
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: elocare-caa-debug-apk
-          path: android/app/build/outputs/apk/debug/app-debug.apk
+          name: elocare-caa-release-apk
+          path: android/app/build/outputs/apk/release/app-release.apk
           if-no-files-found: error

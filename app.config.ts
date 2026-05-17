@@ -45,7 +45,7 @@ const config: ExpoConfig = {
 
   // ── Android ──────────────────────────────────
   android: {
-    versionCode: 5,
+    versionCode: 9,
     adaptiveIcon: {
       backgroundColor:  "#1A56DB",
       foregroundImage:  "./assets/images/android-icon-foreground.png",
@@ -64,6 +64,8 @@ const config: ExpoConfig = {
       "WRITE_EXTERNAL_STORAGE",
       // Galeria — Android 13+
       "READ_MEDIA_IMAGES",
+      // Galeria — Android 14+ com acesso parcial a fotos
+      "READ_MEDIA_VISUAL_USER_SELECTED",
       // Manter tela ativa durante sessão terapêutica
       "WAKE_LOCK",
     ],
@@ -88,6 +90,15 @@ const config: ExpoConfig = {
   plugins: [
     "expo-router",
     "expo-asset",
+    [
+      "expo-image-picker",
+      {
+        photosPermission:
+          "Permitir que o EloCare CAA acesse suas fotos para personalizar os cartoes.",
+        cameraPermission:
+          "Permitir que o EloCare CAA use a camera para fotografar os cartoes.",
+      },
+    ],
     [
       "expo-audio",
       {

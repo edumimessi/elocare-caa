@@ -14,7 +14,7 @@ import {
   Platform,
   Image,
   Alert,
-  AlertButton,
+  Modal,
   useWindowDimensions,
 } from 'react-native';
 import * as Haptics from 'expo-haptics';
@@ -57,6 +57,7 @@ export default function HomeScreen() {
   const [pressedId, setPressedId]       = useState<string | null>(null);
   const [settings, setSettings]         = useState<Settings | null>(null);
   const [imageEditMode, setImageEditMode] = useState(false);
+  const [photoActionCard, setPhotoActionCard] = useState<DisplayCard | null>(null);
 
   // ── Módulos
   const { profiles, activeProfile, switchProfile, reload: reloadProfiles } = useProfiles();
@@ -157,7 +158,13 @@ export default function HomeScreen() {
   }, [audio, telemetry, settings?.useElevenLabs]);
 
   const pickCardPhoto = useCallback(async (card: DisplayCard, source: 'camera' | 'gallery') => {
-    if (!activeProfile) return;
+    if (!activeProfile) {
+      Alert.alert(
+        'Paciente necessario',
+        'Selecione ou crie um paciente antes de salvar fotos nos cartoes.'
+      );
+      return;
+    }
 
     const permission = source === 'camera'
       ? await ImagePicker.requestCameraPermissionsAsync()
@@ -182,8 +189,8 @@ export default function HomeScreen() {
         })
       : await ImagePicker.launchImageLibraryAsync({
           mediaTypes: ImagePicker.MediaTypeOptions.Images,
-          allowsEditing: true,
-          aspect: [1, 1],
+          allowsEditing: false,
+          allowsMultipleSelection: false,
           quality: 0.82,
         });
 
@@ -193,28 +200,31 @@ export default function HomeScreen() {
     await reloadProfiles();
   }, [activeProfile, reloadProfiles]);
 
-  const handleCardLongPress = useCallback((card: DisplayCard) => {
-    if (!activeProfile) return;
-
-    const actions: AlertButton[] = [
-      { text: 'Camera', onPress: () => pickCardPhoto(card, 'camera') },
-      { text: 'Galeria', onPress: () => pickCardPhoto(card, 'gallery') },
-    ];
-
-    if (card.imageUri) {
-      actions.push({
-        text: 'Remover foto',
-        onPress: async () => {
-          await removeCardImageOverride(activeProfile.id, card.id);
-          await reloadProfiles();
-        },
-      });
+  const openPhotoActions = useCallback((card: DisplayCard) => {
+    if (!activeProfile) {
+      Alert.alert(
+        'Paciente necessario',
+        'Selecione ou crie um paciente antes de salvar fotos nos cartoes.'
+      );
+      return;
     }
+    setPhotoActionCard(card);
+  }, [activeProfile]);
 
-    actions.push({ text: 'Cancelar', onPress: () => undefined });
+  const handleRemoveCardPhoto = useCallback(async () => {
+    if (!activeProfile || !photoActionCard) return;
+    const card = photoActionCard;
+    setPhotoActionCard(null);
+    await removeCardImageOverride(activeProfile.id, card.id);
+    await reloadProfiles();
+  }, [activeProfile, photoActionCard, reloadProfiles]);
 
-    Alert.alert('Foto do cartao', `Escolha uma foto real para "${card.label}".`, actions);
-  }, [activeProfile, pickCardPhoto, reloadProfiles]);
+  const handlePickFromPhotoSheet = useCallback(async (source: 'camera' | 'gallery') => {
+    if (!photoActionCard) return;
+    const card = photoActionCard;
+    setPhotoActionCard(null);
+    await pickCardPhoto(card, source);
+  }, [photoActionCard, pickCardPhoto]);
 
   const handleSpeakSentence = useCallback(async () => {
     if (sentence.length === 0) return;
@@ -245,6 +255,7 @@ export default function HomeScreen() {
     setCategory(null);
     setSentence([]);
     setImageEditMode(false);
+    setPhotoActionCard(null);
   }, []);
 
   const handleAddProfile = useCallback(() => {
@@ -523,13 +534,13 @@ export default function HomeScreen() {
               <Pressable
                 onPress={() => {
                   if (imageEditMode && !item.id.startsWith('custom_')) {
-                    handleCardLongPress(item);
+                    openPhotoActions(item);
                     return;
                   }
                   handleCardPress(item);
                 }}
                 onLongPress={() => {
-                  if (!item.id.startsWith('custom_')) handleCardLongPress(item);
+                  if (!item.id.startsWith('custom_')) openPhotoActions(item);
                 }}
                 style={({ pressed }) => [
                   styles.caaCard,
@@ -564,6 +575,52 @@ export default function HomeScreen() {
           }}
         />
       )}
+
+      <Modal
+        visible={!!photoActionCard}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setPhotoActionCard(null)}
+      >
+        <Pressable style={styles.photoSheetBackdrop} onPress={() => setPhotoActionCard(null)}>
+          <Pressable style={[styles.photoSheet, { backgroundColor: colors.surface }]}>
+            <Text style={[styles.photoSheetTitle, { color: colors.foreground }]}>
+              Foto do cartao
+            </Text>
+            <Text style={[styles.photoSheetSubtitle, { color: colors.muted }]}>
+              {photoActionCard ? `Alterar foto de "${photoActionCard.label}"` : ''}
+            </Text>
+            <Pressable
+              onPress={() => handlePickFromPhotoSheet('camera')}
+              style={[styles.photoSheetButton, { backgroundColor: colors.primary }]}
+            >
+              <Text style={styles.photoSheetPrimaryText}>Camera</Text>
+            </Pressable>
+            <Pressable
+              onPress={() => handlePickFromPhotoSheet('gallery')}
+              style={[styles.photoSheetButton, { backgroundColor: colors.primary }]}
+            >
+              <Text style={styles.photoSheetPrimaryText}>Galeria</Text>
+            </Pressable>
+            {!!photoActionCard?.imageUri && (
+              <Pressable
+                onPress={handleRemoveCardPhoto}
+                style={[styles.photoSheetButton, styles.photoSheetRemoveButton]}
+              >
+                <Text style={styles.photoSheetRemoveText}>Remover foto</Text>
+              </Pressable>
+            )}
+            <Pressable
+              onPress={() => setPhotoActionCard(null)}
+              style={[styles.photoSheetButton, styles.photoSheetCancelButton]}
+            >
+              <Text style={[styles.photoSheetCancelText, { color: colors.foreground }]}>
+                Cancelar
+              </Text>
+            </Pressable>
+          </Pressable>
+        </Pressable>
+      </Modal>
 
     </ScreenContainer>
   );
@@ -758,6 +815,52 @@ const styles = StyleSheet.create({
     color: '#FFFFFF',
     fontSize: 10,
     fontWeight: '900',
+  },
+  photoSheetBackdrop: {
+    flex: 1,
+    backgroundColor: 'rgba(15,23,42,0.42)',
+    justifyContent: 'flex-end',
+    padding: 16,
+  },
+  photoSheet: {
+    borderRadius: 18,
+    padding: 16,
+    gap: 10,
+  },
+  photoSheetTitle: {
+    fontSize: 18,
+    fontWeight: '900',
+    textAlign: 'center',
+  },
+  photoSheetSubtitle: {
+    fontSize: 13,
+    textAlign: 'center',
+    marginBottom: 4,
+  },
+  photoSheetButton: {
+    borderRadius: 14,
+    paddingVertical: 14,
+    alignItems: 'center',
+  },
+  photoSheetPrimaryText: {
+    color: '#FFFFFF',
+    fontSize: 16,
+    fontWeight: '900',
+  },
+  photoSheetRemoveButton: {
+    backgroundColor: '#DC2626',
+  },
+  photoSheetRemoveText: {
+    color: '#FFFFFF',
+    fontSize: 15,
+    fontWeight: '900',
+  },
+  photoSheetCancelButton: {
+    backgroundColor: 'rgba(148,163,184,0.18)',
+  },
+  photoSheetCancelText: {
+    fontSize: 15,
+    fontWeight: '800',
   },
   emojiBubble: {
     width: 60,

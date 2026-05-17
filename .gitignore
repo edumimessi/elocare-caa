@@ -61,6 +61,7 @@ Thumbs.db
 *.tar.gz
 .cache/
 .npm-cache/
+.localappdata/
 
 # Webdev artifacts (checkpoint zips, migrations, etc.)
 .webdev/

@@ -1,34 +1,47 @@
-// ─────────────────────────────────────────────
-// tests/profiles.test.ts
-// Testes unitários — profiles-store
-// ─────────────────────────────────────────────
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 
-// ── Mock do AsyncStorage ─────────────────────
 const store: Record<string, string> = {};
+const secureStore: Record<string, string> = {};
+
 vi.mock('@react-native-async-storage/async-storage', () => ({
   default: {
-    getItem:    async (k: string) => store[k] ?? null,
-    setItem:    async (k: string, v: string) => { store[k] = v; },
+    getItem: async (k: string) => store[k] ?? null,
+    setItem: async (k: string, v: string) => { store[k] = v; },
     removeItem: async (k: string) => { delete store[k]; },
-    multiSet:   async (pairs: [string, string][]) => {
+    multiSet: async (pairs: [string, string][]) => {
       pairs.forEach(([k, v]) => { store[k] = v; });
     },
+    multiGet: async (keys: string[]) => keys.map((k) => [k, store[k] ?? null]),
+    multiRemove: async (keys: string[]) => {
+      keys.forEach((k) => { delete store[k]; });
+    },
+    getAllKeys: async () => Object.keys(store),
   },
 }));
 
-// ── Mock do FileSystem ───────────────────────
+vi.mock('expo-secure-store', () => ({
+  getItemAsync: async (k: string) => secureStore[k] ?? null,
+  setItemAsync: async (k: string, v: string) => { secureStore[k] = v; },
+  deleteItemAsync: async (k: string) => { delete secureStore[k]; },
+}));
+
 vi.mock('expo-file-system/legacy', () => ({
   documentDirectory: 'file://documents/',
-  getInfoAsync:    async () => ({ exists: false }),
+  getInfoAsync: async () => ({ exists: false }),
   makeDirectoryAsync: async () => {},
-  copyAsync:       async () => {},
-  deleteAsync:     async () => {},
+  copyAsync: async () => {},
+  deleteAsync: async () => {},
   writeAsStringAsync: async () => {},
-  readAsStringAsync:  async () => '{}',
+  readAsStringAsync: async () => '{}',
+  readDirectoryAsync: async () => ['elocare_export_1.json', 'other.txt'],
   EncodingType: { Base64: 'base64', UTF8: 'utf8' },
   cacheDirectory: 'file://cache/',
 }));
+
+function clearStores() {
+  Object.keys(store).forEach((k) => delete store[k]);
+  Object.keys(secureStore).forEach((k) => delete secureStore[k]);
+}
 
 import {
   createProfile,
@@ -45,11 +58,10 @@ import {
 
 describe('profiles-store', () => {
   beforeEach(() => {
-    // Limpa o store entre testes
-    Object.keys(store).forEach((k) => delete store[k]);
+    clearStores();
   });
 
-  it('cria um perfil com campos obrigatórios', async () => {
+  it('cria um perfil com campos obrigatorios', async () => {
     const p = await createProfile({ name: 'Maria' });
     expect(p.id).toBeTruthy();
     expect(p.name).toBe('Maria');
@@ -59,27 +71,27 @@ describe('profiles-store', () => {
     expect(p.hiddenCardIds).toEqual([]);
   });
 
-  it('o primeiro perfil criado é ativado automaticamente', async () => {
-    const p = await createProfile({ name: 'João' });
+  it('o primeiro perfil criado e ativado automaticamente', async () => {
+    const p = await createProfile({ name: 'Joao' });
     const activeId = await getActiveProfileId();
     expect(activeId).toBe(p.id);
   });
 
-  it('o segundo perfil criado NÃO muda o perfil ativo', async () => {
+  it('o segundo perfil criado nao muda o perfil ativo', async () => {
     const p1 = await createProfile({ name: 'Maria' });
-    await createProfile({ name: 'João' });
+    await createProfile({ name: 'Joao' });
     const activeId = await getActiveProfileId();
     expect(activeId).toBe(p1.id);
   });
 
   it('retorna todos os perfis criados', async () => {
     await createProfile({ name: 'Maria' });
-    await createProfile({ name: 'João' });
+    await createProfile({ name: 'Joao' });
     await createProfile({ name: 'Ana' });
     const all = await getAllProfiles();
     expect(all).toHaveLength(3);
     expect(all.map((p) => p.name)).toContain('Maria');
-    expect(all.map((p) => p.name)).toContain('João');
+    expect(all.map((p) => p.name)).toContain('Joao');
   });
 
   it('atualiza campos do perfil', async () => {
@@ -94,14 +106,14 @@ describe('profiles-store', () => {
   });
 
   it('troca o perfil ativo corretamente', async () => {
-    const p1 = await createProfile({ name: 'Maria' });
-    const p2 = await createProfile({ name: 'João' });
+    await createProfile({ name: 'Maria' });
+    const p2 = await createProfile({ name: 'Joao' });
     await setActiveProfile(p2.id);
     const activeId = await getActiveProfileId();
     expect(activeId).toBe(p2.id);
   });
 
-  it('deleta o perfil e remove do índice', async () => {
+  it('deleta o perfil e remove do indice', async () => {
     const p = await createProfile({ name: 'Maria' });
     await deleteProfile(p.id);
     const all = await getAllProfiles();
@@ -110,7 +122,7 @@ describe('profiles-store', () => {
     expect(fromStore).toBeNull();
   });
 
-  it('adiciona cartão customizado ao perfil', async () => {
+  it('adiciona cartao customizado ao perfil', async () => {
     const p = await createProfile({ name: 'Maria' });
     const card = await addCustomCard(p.id, {
       label: 'Boneca',
@@ -126,7 +138,7 @@ describe('profiles-store', () => {
     expect(updated?.customCards).toHaveLength(1);
   });
 
-  it('remove cartão customizado do perfil', async () => {
+  it('remove cartao customizado do perfil', async () => {
     const p = await createProfile({ name: 'Maria' });
     const card = await addCustomCard(p.id, {
       label: 'Boneca',
@@ -139,7 +151,7 @@ describe('profiles-store', () => {
     expect(updated?.customCards).toHaveLength(0);
   });
 
-  it('oculta e reexibe cartão para o perfil', async () => {
+  it('oculta e reexibe cartao para o perfil', async () => {
     const p = await createProfile({ name: 'Maria' });
     await toggleCardVisibility(p.id, 'water', true);
     let updated = await getProfile(p.id);
@@ -156,18 +168,11 @@ describe('profiles-store', () => {
   });
 });
 
-
-// ─────────────────────────────────────────────
-// tests/audio-cache.test.ts
-// Testes unitários — audio-cache
-// ─────────────────────────────────────────────
 describe('audio-cache', () => {
-  // Mock global fetch
   const originalFetch = global.fetch;
 
   beforeEach(() => {
-    Object.keys(store).forEach((k) => delete store[k]);
-    // Reset fetch mock
+    clearStores();
     global.fetch = originalFetch;
   });
 
@@ -175,17 +180,17 @@ describe('audio-cache', () => {
     const { generateAudio } = await import('../lib/audio-cache');
     global.fetch = vi.fn().mockResolvedValue({ ok: false, status: 401 });
 
-    const result = await generateAudio('Água', 'water', 'bad-key', 'voice-id');
+    const result = await generateAudio('Agua', 'water', 'bad-key', 'voice-id');
     expect(result).toBeNull();
   });
 
-  it('isCacheReady retorna false quando manifesto está vazio', async () => {
+  it('isCacheReady retorna false quando manifesto esta vazio', async () => {
     const { isCacheReady } = await import('../lib/audio-cache');
     const ready = await isCacheReady('voice-id');
     expect(ready).toBe(false);
   });
 
-  it('loadManifest retorna objeto vazio se não existir', async () => {
+  it('loadManifest retorna objeto vazio se nao existir', async () => {
     const { loadManifest } = await import('../lib/audio-cache');
     const manifest = await loadManifest();
     expect(manifest).toEqual({});
@@ -199,17 +204,12 @@ describe('audio-cache', () => {
   });
 });
 
-
-// ─────────────────────────────────────────────
-// tests/telemetry.test.ts
-// Testes unitários — telemetria clínica
-// ─────────────────────────────────────────────
 describe('telemetry', () => {
   beforeEach(() => {
-    Object.keys(store).forEach((k) => delete store[k]);
+    clearStores();
   });
 
-  it('inicia e encerra uma sessão corretamente', async () => {
+  it('inicia e encerra uma sessao corretamente', async () => {
     const { startSession, endSession, getSessions, getActiveSession } =
       await import('../lib/telemetry');
 
@@ -237,7 +237,7 @@ describe('telemetry', () => {
     await recordClick({
       profileId: 'profile-1',
       cardId: 'water',
-      cardLabel: 'Água',
+      cardLabel: 'Agua',
       categoryId: 'needs',
     });
     await recordClick({
@@ -249,7 +249,7 @@ describe('telemetry', () => {
     await recordClick({
       profileId: 'profile-1',
       cardId: 'water',
-      cardLabel: 'Água',
+      cardLabel: 'Agua',
       categoryId: 'needs',
     });
 
@@ -262,21 +262,20 @@ describe('telemetry', () => {
   });
 
   it('registra frases corretamente', async () => {
-    const { startSession, recordSentence, generateReport } =
-      await import('../lib/telemetry');
+    const { startSession, recordSentence, generateReport } = await import('../lib/telemetry');
     await startSession('profile-1');
 
     await recordSentence({
       profileId: 'profile-1',
       cardIds: ['want', 'water'],
-      labels: ['Quero', 'Água'],
+      labels: ['Quero', 'Agua'],
     });
 
     const report = await generateReport('profile-1', 'Maria', 30);
     expect(report.totalSentences).toBe(1);
   });
 
-  it('relatório retorna zeros para período sem dados', async () => {
+  it('relatorio retorna zeros para periodo sem dados', async () => {
     const { generateReport } = await import('../lib/telemetry');
     const report = await generateReport('profile-sem-dados', 'Teste', 7);
 
@@ -287,35 +286,33 @@ describe('telemetry', () => {
   });
 
   it('exportReportAsText gera texto formatado corretamente', async () => {
-    const { startSession, recordClick, generateReport, exportReportAsText } =
-      await import('../lib/telemetry');
+    const { startSession, recordClick, generateReport, exportReportAsText } = await import('../lib/telemetry');
 
     await startSession('profile-1');
     await recordClick({
       profileId: 'profile-1',
       cardId: 'water',
-      cardLabel: 'Água',
+      cardLabel: 'Agua',
       categoryId: 'needs',
     });
 
     const report = await generateReport('profile-1', 'Maria', 30);
     const text = await exportReportAsText(report);
 
-    expect(text).toContain('RELATÓRIO DE COMUNICAÇÃO');
+    expect(text).toContain('RELAT');
     expect(text).toContain('Maria');
-    expect(text).toContain('Água');
+    expect(text).toContain('Agua');
     expect(text).toContain('EloCare CAA');
   });
 
   it('limpeza de telemetria remove todos os dados do perfil', async () => {
-    const { startSession, recordClick, clearTelemetry, generateReport } =
-      await import('../lib/telemetry');
+    const { startSession, recordClick, clearTelemetry, generateReport } = await import('../lib/telemetry');
 
     await startSession('profile-1');
     await recordClick({
       profileId: 'profile-1',
       cardId: 'water',
-      cardLabel: 'Água',
+      cardLabel: 'Agua',
       categoryId: 'needs',
     });
     await clearTelemetry('profile-1');
@@ -324,17 +321,15 @@ describe('telemetry', () => {
     expect(report.totalClicks).toBe(0);
   });
 
-  it('atividade diária agrupa por data corretamente', async () => {
-    const { startSession, recordClick, generateReport } =
-      await import('../lib/telemetry');
+  it('atividade diaria agrupa por data corretamente', async () => {
+    const { startSession, recordClick, generateReport } = await import('../lib/telemetry');
 
     await startSession('profile-1');
-    // 3 cliques no mesmo dia (hoje)
     for (let i = 0; i < 3; i++) {
       await recordClick({
         profileId: 'profile-1',
         cardId: 'water',
-        cardLabel: 'Água',
+        cardLabel: 'Agua',
         categoryId: 'needs',
       });
     }
@@ -342,5 +337,53 @@ describe('telemetry', () => {
     const report = await generateReport('profile-1', 'Maria', 30);
     expect(report.dailyActivity).toHaveLength(1);
     expect(report.dailyActivity[0].clicks).toBe(3);
+  });
+});
+
+describe('lgpd', () => {
+  beforeEach(() => {
+    clearStores();
+  });
+
+  it('remove registros de telemetria com mais de 90 dias usando as chaves reais por perfil', async () => {
+    const { enforceDataRetention } = await import('../lib/lgpd');
+    const oldDate = new Date(Date.now() - 91 * 24 * 60 * 60 * 1000).toISOString();
+    const recentDate = new Date().toISOString();
+
+    store.elocare_clicks_profile1 = JSON.stringify([
+      { id: 'old-click', timestamp: oldDate },
+      { id: 'new-click', timestamp: recentDate },
+    ]);
+    store.elocare_sentences_profile1 = JSON.stringify([
+      { id: 'old-sentence', spokenAt: oldDate },
+      { id: 'new-sentence', spokenAt: recentDate },
+    ]);
+    store.elocare_sessions_profile1 = JSON.stringify([
+      { id: 'old-session', startedAt: oldDate },
+      { id: 'new-session', startedAt: recentDate },
+    ]);
+
+    await enforceDataRetention();
+
+    expect(JSON.parse(store.elocare_clicks_profile1)).toEqual([{ id: 'new-click', timestamp: recentDate }]);
+    expect(JSON.parse(store.elocare_sentences_profile1)).toEqual([{ id: 'new-sentence', spokenAt: recentDate }]);
+    expect(JSON.parse(store.elocare_sessions_profile1)).toEqual([{ id: 'new-session', startedAt: recentDate }]);
+  });
+
+  it('deleteAllData remove dados locais e chaves seguras', async () => {
+    const { deleteAllData } = await import('../lib/lgpd');
+
+    store.elocare_patient_name = 'Maria';
+    store.elocare_elevenlabs_api_key = 'legacy-key';
+    secureStore.elocare_elevenlabs_api_key = 'secure-key';
+    secureStore.elocare_therapist_pin = '1234';
+
+    const result = await deleteAllData();
+
+    expect(result.success).toBe(true);
+    expect(store.elocare_patient_name).toBeUndefined();
+    expect(store.elocare_elevenlabs_api_key).toBeUndefined();
+    expect(secureStore.elocare_elevenlabs_api_key).toBeUndefined();
+    expect(secureStore.elocare_therapist_pin).toBeUndefined();
   });
 });

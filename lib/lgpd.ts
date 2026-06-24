@@ -1,19 +1,28 @@
-// ─────────────────────────────────────────────
+// -------------------------------------------------------------
 // lib/lgpd.ts
-// Conformidade LGPD — Lei 13.709/2018
-// Dados de saúde de crianças: Art. 11 + Art. 14
-// ─────────────────────────────────────────────
+// Conformidade LGPD - Lei 13.709/2018
+// Dados de saude de criancas: Art. 11 + Art. 14
+// -------------------------------------------------------------
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as FileSystem from 'expo-file-system/legacy';
+import * as SecureStore from 'expo-secure-store';
+import { SECURE_SETTING_KEYS } from '@/lib/settings-store';
 
 const KEYS = {
-  CONSENT: 'elocare_lgpd_consent',         // { accepted: bool, timestamp: string, version: string }
-  RETENTION_DAYS: 90,                        // máximo de dias para dados de telemetria
+  CONSENT: 'elocare_lgpd_consent',
+  RETENTION_DAYS: 90,
 };
 
-const CONSENT_VERSION = '1.0'; // incrementar quando a política mudar
+const CONSENT_VERSION = '1.0';
+const ELOCARE_PREFIX = 'elocare_';
+const AUDIO_CACHE_DIR = `${FileSystem.documentDirectory}audio_cache/`;
+const AUDIO_MANIFEST_PATH = `${FileSystem.documentDirectory}audio_manifest.json`;
+const PROFILES_DIR = `${FileSystem.documentDirectory}profiles/`;
+const EXPORT_PREFIX = 'elocare_export_';
 
-// ── CONSENTIMENTO ────────────────────────────
+// -------------------------------------------------------------
+// CONSENTIMENTO
+// -------------------------------------------------------------
 
 export type ConsentRecord = {
   accepted: boolean;
@@ -50,34 +59,66 @@ export async function revokeConsent(): Promise<void> {
   await AsyncStorage.removeItem(KEYS.CONSENT);
 }
 
-// ── DIREITO AO ESQUECIMENTO (Art. 18, VI) ────
+// -------------------------------------------------------------
+// DIREITO AO ESQUECIMENTO (Art. 18, VI)
+// -------------------------------------------------------------
+
+async function deleteIfExists(path: string): Promise<void> {
+  const info = await FileSystem.getInfoAsync(path);
+  if (info.exists) {
+    await FileSystem.deleteAsync(path, { idempotent: true });
+  }
+}
+
+async function deleteSecureSettings(): Promise<void> {
+  await Promise.all(
+    SECURE_SETTING_KEYS.map(async (key) => {
+      try {
+        await SecureStore.deleteItemAsync(key);
+      } catch {
+        // SecureStore may be unavailable on some runtimes.
+      }
+    })
+  );
+}
+
+async function deleteExportFiles(): Promise<void> {
+  try {
+    const documentDirectory = FileSystem.documentDirectory;
+    if (!documentDirectory) return;
+
+    const files = await FileSystem.readDirectoryAsync(documentDirectory);
+    await Promise.all(
+      files
+        .filter((fileName) => fileName.startsWith(EXPORT_PREFIX))
+        .map((fileName) =>
+          FileSystem.deleteAsync(`${documentDirectory}${fileName}`, { idempotent: true })
+        )
+    );
+  } catch {
+    // Export cleanup is best-effort and should not block deletion.
+  }
+}
 
 /**
- * Apaga TODOS os dados do app: perfis, telemetria, cache de áudio, configurações.
- * Irreversível. Deve ser precedido de confirmação do usuário.
+ * Apaga TODOS os dados do app: perfis, telemetria, cache de audio, configuracoes e exports.
+ * Irreversivel. Deve ser precedido de confirmacao do usuario.
  */
 export async function deleteAllData(): Promise<{ success: boolean; error?: string }> {
   try {
-    // 1. Apagar todas as chaves do AsyncStorage
     const allKeys = await AsyncStorage.getAllKeys();
-    const elocareKeys = allKeys.filter((k) => k.startsWith('elocare_'));
+    const elocareKeys = allKeys.filter((k) => k.startsWith(ELOCARE_PREFIX));
     if (elocareKeys.length > 0) {
       await AsyncStorage.multiRemove(elocareKeys);
     }
 
-    // 2. Apagar cache de áudio
-    const cacheDir = `${FileSystem.documentDirectory}audio_cache/`;
-    const cacheInfo = await FileSystem.getInfoAsync(cacheDir);
-    if (cacheInfo.exists) {
-      await FileSystem.deleteAsync(cacheDir, { idempotent: true });
-    }
-
-    // 3. Apagar fotos de perfis
-    const profilesDir = `${FileSystem.documentDirectory}profiles/`;
-    const profilesInfo = await FileSystem.getInfoAsync(profilesDir);
-    if (profilesInfo.exists) {
-      await FileSystem.deleteAsync(profilesDir, { idempotent: true });
-    }
+    await Promise.all([
+      deleteSecureSettings(),
+      deleteIfExists(AUDIO_CACHE_DIR),
+      deleteIfExists(AUDIO_MANIFEST_PATH),
+      deleteIfExists(PROFILES_DIR),
+      deleteExportFiles(),
+    ]);
 
     return { success: true };
   } catch (err) {
@@ -85,16 +126,18 @@ export async function deleteAllData(): Promise<{ success: boolean; error?: strin
   }
 }
 
-// ── PORTABILIDADE (Art. 18, V) ───────────────
+// -------------------------------------------------------------
+// PORTABILIDADE (Art. 18, V)
+// -------------------------------------------------------------
 
 /**
- * Exporta todos os dados do usuário em formato JSON legível.
+ * Exporta todos os dados do usuario em formato JSON legivel.
  * Salva em documentDirectory para ser compartilhado via share sheet.
  */
 export async function exportUserData(): Promise<{ fileUri: string } | { error: string }> {
   try {
     const allKeys = await AsyncStorage.getAllKeys();
-    const elocareKeys = allKeys.filter((k) => k.startsWith('elocare_'));
+    const elocareKeys = allKeys.filter((k) => k.startsWith(ELOCARE_PREFIX));
     const pairs = await AsyncStorage.multiGet(elocareKeys);
 
     const exportData: Record<string, unknown> = {
@@ -112,7 +155,7 @@ export async function exportUserData(): Promise<{ fileUri: string } | { error: s
       }
     }
 
-    const fileName = `elocare_export_${Date.now()}.json`;
+    const fileName = `${EXPORT_PREFIX}${Date.now()}.json`;
     const fileUri = `${FileSystem.documentDirectory}${fileName}`;
     await FileSystem.writeAsStringAsync(fileUri, JSON.stringify(exportData, null, 2));
 
@@ -122,7 +165,62 @@ export async function exportUserData(): Promise<{ fileUri: string } | { error: s
   }
 }
 
-// ── RETENÇÃO AUTOMÁTICA (Art. 15) ────────────
+// -------------------------------------------------------------
+// RETENCAO AUTOMATICA (Art. 15)
+// -------------------------------------------------------------
+
+type StoredRecord = Record<string, unknown>;
+
+function filterRecordsByDate(
+  records: StoredRecord[],
+  dateField: string,
+  cutoffISO: string
+): StoredRecord[] {
+  return records.filter((record) => {
+    const value = record[dateField];
+    return typeof value === 'string' && value >= cutoffISO;
+  });
+}
+
+async function trimArrayStorage(
+  key: string,
+  dateField: string,
+  cutoffISO: string
+): Promise<void> {
+  const raw = await AsyncStorage.getItem(key);
+  if (!raw) return;
+
+  try {
+    const records = JSON.parse(raw);
+    if (!Array.isArray(records)) {
+      await AsyncStorage.removeItem(key);
+      return;
+    }
+
+    const filtered = filterRecordsByDate(records, dateField, cutoffISO);
+    if (filtered.length === 0) {
+      await AsyncStorage.removeItem(key);
+    } else if (filtered.length !== records.length) {
+      await AsyncStorage.setItem(key, JSON.stringify(filtered));
+    }
+  } catch {
+    await AsyncStorage.removeItem(key);
+  }
+}
+
+async function trimLegacySingleSession(key: string, cutoffISO: string): Promise<void> {
+  const raw = await AsyncStorage.getItem(key);
+  if (!raw) return;
+
+  try {
+    const session = JSON.parse(raw);
+    if (!session?.startedAt || session.startedAt < cutoffISO) {
+      await AsyncStorage.removeItem(key);
+    }
+  } catch {
+    await AsyncStorage.removeItem(key);
+  }
+}
 
 /**
  * Remove eventos de telemetria com mais de RETENTION_DAYS dias.
@@ -135,50 +233,33 @@ export async function enforceDataRetention(): Promise<void> {
     const cutoffISO = cutoff.toISOString();
 
     const allKeys = await AsyncStorage.getAllKeys();
+    const tasks: Promise<void>[] = [];
 
-    // Limpar sessões antigas
-    const sessionKeys = allKeys.filter((k) => k.startsWith('elocare_session_'));
-    for (const key of sessionKeys) {
-      const raw = await AsyncStorage.getItem(key);
-      if (!raw) continue;
-      try {
-        const session = JSON.parse(raw);
-        if (session.startedAt < cutoffISO) {
-          await AsyncStorage.removeItem(key);
-        }
-      } catch {
-        // Dado corrompido — remover
-        await AsyncStorage.removeItem(key);
+    for (const key of allKeys) {
+      if (key.startsWith('elocare_clicks_') || key === 'elocare_click_events') {
+        tasks.push(trimArrayStorage(key, 'timestamp', cutoffISO));
+      } else if (key.startsWith('elocare_sentences_') || key === 'elocare_sentence_events') {
+        tasks.push(trimArrayStorage(key, 'spokenAt', cutoffISO));
+      } else if (key.startsWith('elocare_sessions_')) {
+        tasks.push(trimArrayStorage(key, 'startedAt', cutoffISO));
+      } else if (key.startsWith('elocare_session_')) {
+        tasks.push(trimLegacySingleSession(key, cutoffISO));
       }
     }
 
-    // Limpar eventos de clique antigos
-    const clickKey = 'elocare_click_events';
-    const clickRaw = await AsyncStorage.getItem(clickKey);
-    if (clickRaw) {
-      const events: { timestamp: string }[] = JSON.parse(clickRaw);
-      const filtered = events.filter((e) => e.timestamp >= cutoffISO);
-      await AsyncStorage.setItem(clickKey, JSON.stringify(filtered));
-    }
-
-    // Limpar eventos de frase antigos
-    const sentenceKey = 'elocare_sentence_events';
-    const sentenceRaw = await AsyncStorage.getItem(sentenceKey);
-    if (sentenceRaw) {
-      const events: { spokenAt: string }[] = JSON.parse(sentenceRaw);
-      const filtered = events.filter((e) => e.spokenAt >= cutoffISO);
-      await AsyncStorage.setItem(sentenceKey, JSON.stringify(filtered));
-    }
+    await Promise.all(tasks);
   } catch {
-    // Silencioso — não interromper o startup do app
+    // Silencioso para nao interromper o startup do app.
   }
 }
 
-// ── ANONIMIZAÇÃO PARA RELATÓRIOS AGREGADOS ───
+// -------------------------------------------------------------
+// ANONIMIZACAO PARA RELATORIOS AGREGADOS
+// -------------------------------------------------------------
 
 /**
- * Retorna uma versão anonimizada do nome do perfil para relatórios externos.
- * Ex: "Maria Fernanda" → "M.F." | "João" → "J."
+ * Retorna uma versao anonimizada do nome do perfil para relatorios externos.
+ * Ex: "Maria Fernanda" -> "M.F." | "Joao" -> "J."
  */
 export function anonymizeName(name: string): string {
   return name

@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { CATEGORIES, CARDS, getCardsByCategory } from '../lib/caa-data';
+import { CATEGORIES, CARDS, getCardsByCategory, getPhotoUri } from '../lib/caa-data';
 
 describe('CAA Data', () => {
   it('should have 6 categories', () => {
@@ -13,6 +13,12 @@ describe('CAA Data', () => {
       expect(cat.emoji).toBeTruthy();
       expect(cat.color).toBeTruthy();
       expect(cat.bgColor).toBeTruthy();
+    }
+  });
+
+  it('each category should have a photo query', () => {
+    for (const cat of CATEGORIES) {
+      expect(cat.imageQuery).toBeTruthy();
     }
   });
 
@@ -33,6 +39,12 @@ describe('CAA Data', () => {
     }
   });
 
+  it('all default cards should have photo cues', () => {
+    for (const card of CARDS) {
+      expect(card.imageQuery).toBeTruthy();
+    }
+  });
+
   it('getCardsByCategory should return only cards of that category', () => {
     const feelingCards = getCardsByCategory('feelings');
     for (const card of feelingCards) {
@@ -45,5 +57,10 @@ describe('CAA Data', () => {
     for (const card of CARDS) {
       expect(categoryIds.has(card.categoryId)).toBe(true);
     }
+  });
+
+  it('getPhotoUri should build a photo source url', () => {
+    expect(getPhotoUri('glass of water', 'water')).toContain('source.unsplash.com');
+    expect(getPhotoUri('glass of water', 'water')).toContain('glass%20of%20water');
   });
 });
